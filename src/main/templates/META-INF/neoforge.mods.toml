@@ -1,0 +1,27 @@
+license="${mod_license}"
+
+[[mods]]
+modId="${mod_id}"
+version="${mod_version}"
+displayName="${mod_name}"
+
+# The authors of the mod, displayed in the mod UI
+authors="${mod_authors}"
+description='''
+猎人游戏（Manhunt）：猎人与逃生者对抗玩法。逃生者依次激活四个检查点并击杀末影龙获胜，猎人负责追杀。
+(Manhunt: runners activate four checkpoints and slay the Ender Dragon while hunters hunt them down.)
+'''
+
+[[dependencies.${mod_id}]]
+    modId="neoforge"
+    type="required"
+    versionRange="[${neo_version},)"
+    ordering="NONE"
+    side="BOTH"
+
+[[dependencies.${mod_id}]]
+    modId="minecraft"
+    type="required"
+    versionRange="${minecraft_version_range}"
+    ordering="NONE"
+    side="BOTH"
