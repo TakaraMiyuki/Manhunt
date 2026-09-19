@@ -16,3 +16,4 @@ runs/
 
 # ZCode
 .zcode/
+release_payload.json
