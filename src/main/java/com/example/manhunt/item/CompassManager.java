@@ -3,6 +3,7 @@ package com.example.manhunt.item;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.BiFunction;
 
 import com.example.manhunt.GameConfig;
 import com.example.manhunt.game.ManhuntGame;
@@ -30,6 +31,12 @@ public final class CompassManager {
     private CompassManager() {}
 
     private static final String TARGET_TAG = "manhunt_target";
+
+    /**
+     * 罗盘指向装饰器（供其他模组扩展，如技能卡"盲点"的干扰效果）：
+     * 输入罗盘持有者 UUID 与原目标，返回替换目标；返回 null 表示不干预。
+     */
+    public static BiFunction<UUID, GlobalPos, GlobalPos> targetDecorator = null;
 
     // ==================== 发放 ====================
 
@@ -76,7 +83,8 @@ public final class CompassManager {
                 if (target == null) {
                     return;
                 }
-                setTracker(stack, GlobalPos.of(target.level().dimension(), target.blockPosition()));
+                setTracker(stack, decorate(hunter.getUUID(),
+                    GlobalPos.of(target.level().dimension(), target.blockPosition())));
             });
         }
 
@@ -91,6 +99,14 @@ public final class CompassManager {
                 forEachStack(runner, ManhuntItems.CHECKPOINT_COMPASS.get(), stack -> setTracker(stack, target));
             }
         }
+    }
+
+    private static GlobalPos decorate(UUID holder, GlobalPos original) {
+        if (targetDecorator == null) {
+            return original;
+        }
+        GlobalPos replaced = targetDecorator.apply(holder, original);
+        return replaced == null ? original : replaced;
     }
 
     private static ServerPlayer resolveTarget(List<ServerPlayer> runners, Optional<UUID> preferred) {

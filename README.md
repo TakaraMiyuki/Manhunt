@@ -1,14 +1,18 @@
 # 猎人游戏 Manhunt
 
-Minecraft Java 26.2 / NeoForge 26.2 猎人追杀玩法模组（测试版 0.1.0-beta）。
+Minecraft Java 26.2 / NeoForge 26.2 猎人追杀玩法模组（0.1.1）。
 
 灵感来自 Dream 的猎人游戏：**逃生者**在躲避追杀的同时依次激活 4 个检查点并击杀末影龙获胜；**猎人**负责追杀所有逃生者。
 
 ## 安装
 
-- 模组 jar：`build/libs/manhunt-0.1.0-beta.jar`，放入 NeoForge 26.2 实例的 `mods/` 文件夹（服务端/客户端都要装）。
+- 模组 jar：`build/libs/manhunt-0.1.1.jar`，放入 NeoForge 26.2 实例的 `mods/` 文件夹（服务端/客户端都要装）。
 - 依赖声明为 `[26.2.0.82,)`，在 26.2.0.88 实例上可正常加载。
 - 需要所有人重新登录客户端才会显示两个自定义罗盘物品的模型（本体服务端可运行）。
+
+## 0.1.1 更新
+
+- 新增 `CompassManager.targetDecorator` 罗盘指向装饰器钩子（约 10 行），供[技能卡 SkillCards](../SkillCards) 模组的"盲点"卡实现"猎人罗盘持续乱指"效果；不影响原有玩法。
 
 ## 游戏流程
 
