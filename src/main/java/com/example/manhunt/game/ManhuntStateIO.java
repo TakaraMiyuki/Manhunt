@@ -3,7 +3,9 @@ package com.example.manhunt.game;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -27,7 +29,8 @@ public final class ManhuntStateIO {
         try {
             JsonObject root = new JsonObject();
             root.addProperty("phase", ManhuntGame.rawPhase().name());
-            root.addProperty("unlocked", ManhuntGame.unlockedCount());
+            root.addProperty("solo", ManhuntGame.rawSoloMode());
+            root.addProperty("activated", ManhuntGame.activatedCount());
             root.add("hunters", uuidList(ManhuntGame.hunters()));
             root.add("runners", uuidList(ManhuntGame.runners()));
             Set<UUID> eliminated = new HashSet<>();
@@ -37,14 +40,17 @@ public final class ManhuntStateIO {
                 }
             }
             root.add("eliminated", uuidList(eliminated));
-            JsonObject cps = new JsonObject();
-            for (int i = 1; i <= GameConfig.CHECKPOINT_COUNT; i++) {
-                BlockPos pos = ManhuntGame.checkpoint(i);
-                if (pos != null) {
-                    cps.add(String.valueOf(i), encodePos(pos));
-                }
+            if (ManhuntGame.currentCheckpoint() != null) {
+                root.add("currentCheckpoint", encodePos(ManhuntGame.currentCheckpoint()));
+                root.addProperty("currentIsStronghold", ManhuntGame.isCurrentStronghold());
             }
-            root.add("checkpoints", cps);
+            if (ManhuntGame.rawLastCheckpoint() != null) {
+                root.add("lastCheckpoint", encodePos(ManhuntGame.rawLastCheckpoint()));
+            }
+            root.add("mileage", longMap(MileageManager.snapshotMileage()));
+            root.add("rollCount", intMap(MileageManager.snapshotRolls()));
+            root.addProperty("morale", MoraleManager.morale());
+            root.addProperty("moraleRewards", MoraleManager.rewards());
 
             Path file = path(server);
             Files.createDirectories(file.getParent());
@@ -67,20 +73,43 @@ public final class ManhuntStateIO {
             }
             // 倒计时无法跨重启恢复，统一按追逐阶段恢复
             ManhuntGame.Phase restored = phase == ManhuntGame.Phase.ESCAPE ? ManhuntGame.Phase.RUNNING : phase;
-            int unlocked = root.get("unlocked").getAsInt();
             Set<UUID> hunters = readUuids(root.get("hunters"));
             Set<UUID> runners = readUuids(root.get("runners"));
             Set<UUID> eliminated = readUuids(root.get("eliminated"));
-            BlockPos[] cps = new BlockPos[GameConfig.CHECKPOINT_COUNT];
-            JsonObject cpsJson = root.getAsJsonObject("checkpoints");
-            for (int i = 1; i <= GameConfig.CHECKPOINT_COUNT; i++) {
-                if (cpsJson.has(String.valueOf(i))) {
-                    cps[i - 1] = decodePos(cpsJson.get(String.valueOf(i)).getAsJsonObject());
+            BlockPos current = root.has("currentCheckpoint")
+                ? decodePos(root.getAsJsonObject("currentCheckpoint")) : null;
+            boolean stronghold = root.has("currentIsStronghold") && root.get("currentIsStronghold").getAsBoolean();
+            BlockPos last = root.has("lastCheckpoint")
+                ? decodePos(root.getAsJsonObject("lastCheckpoint")) : null;
+            int activated = root.get("activated").getAsInt();
+            boolean solo = root.has("solo") && root.get("solo").getAsBoolean();
+
+            ManhuntGame.restoreState(restored, hunters, runners, eliminated, activated,
+                current, stronghold, last, solo);
+
+            Map<UUID, Long> mileage = new HashMap<>();
+            if (root.has("mileage")) {
+                for (var e : root.getAsJsonObject("mileage").entrySet()) {
+                    try {
+                        mileage.put(UUID.fromString(e.getKey()), e.getValue().getAsLong());
+                    } catch (IllegalArgumentException ignored) {
+                    }
                 }
             }
-            ManhuntGame.restoreState(restored, hunters, runners, eliminated, unlocked, cps);
+            Map<UUID, Integer> rolls = new HashMap<>();
+            if (root.has("rollCount")) {
+                for (var e : root.getAsJsonObject("rollCount").entrySet()) {
+                    try {
+                        rolls.put(UUID.fromString(e.getKey()), e.getValue().getAsInt());
+                    } catch (IllegalArgumentException ignored) {
+                    }
+                }
+            }
+            MileageManager.restore(mileage, rolls);
+            MoraleManager.restore(root.get("morale").getAsInt(), root.get("moraleRewards").getAsInt());
+
             ManhuntGame.reattachBossbars(server);
-            ManhuntGame.broadcast(server, "§6[猎人游戏] §7已从存档恢复对局（第 " + unlocked + " 个检查点已激活）。");
+            ManhuntGame.broadcast(server, "§6[猎人游戏] §7已从存档恢复对局（已激活 " + activated + " 个检查点）。");
         } catch (Exception e) {
             // 状态损坏则忽略，视为无对局
         }
@@ -109,6 +138,22 @@ public final class ManhuntStateIO {
             }
         }
         return set;
+    }
+
+    private static com.google.gson.JsonObject longMap(Map<UUID, Long> map) {
+        com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+        for (Map.Entry<UUID, Long> e : map.entrySet()) {
+            o.addProperty(e.getKey().toString(), e.getValue());
+        }
+        return o;
+    }
+
+    private static com.google.gson.JsonObject intMap(Map<UUID, Integer> map) {
+        com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+        for (Map.Entry<UUID, Integer> e : map.entrySet()) {
+            o.addProperty(e.getKey().toString(), e.getValue());
+        }
+        return o;
     }
 
     private static JsonObject encodePos(BlockPos pos) {

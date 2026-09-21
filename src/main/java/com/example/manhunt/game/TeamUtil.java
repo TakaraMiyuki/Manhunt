@@ -2,17 +2,20 @@ package com.example.manhunt.game;
 
 import com.example.manhunt.GameConfig;
 
+import net.minecraft.core.Holder;
 import net.minecraft.core.component.DataComponents;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.effect.MobEffect;
 import net.minecraft.world.effect.MobEffectInstance;
 import net.minecraft.world.effect.MobEffects;
 import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.Level;
 
 /**
- * 阵营判定、属性与增益应用。
+ * 阵营判定、属性与增益应用（性能随 {@link TierSystem} 动态档位变化）。
  */
 public final class TeamUtil {
     private TeamUtil() {}
@@ -25,21 +28,25 @@ public final class TeamUtil {
         return ManhuntGame.isRunner(p.getUUID());
     }
 
-    /** 按阵营设置最大生命值等基础属性（重生/登录后属性会重置，需要重新应用）。 */
+    /** 按阵营与当前档位设置最大生命值（重生/登录后属性会重置，需要重新应用）。 */
     public static void applyBaseAttributes(ServerPlayer p) {
+        double target;
+        if (isRunner(p)) {
+            TierSystem.RunnerStats s = TierSystem.runner();
+            target = p.level().dimension() == Level.END ? s.endMaxHealth() : s.maxHealth();
+        } else {
+            target = TierSystem.hunter().maxHealth();
+        }
         var attr = p.getAttribute(Attributes.MAX_HEALTH);
-        if (attr != null) {
-            double target = isRunner(p) ? GameConfig.RUNNER_MAX_HEALTH : GameConfig.HUNTER_MAX_HEALTH;
-            if (attr.getBaseValue() != target) {
-                attr.setBaseValue(target);
-            }
+        if (attr != null && attr.getBaseValue() != target) {
+            attr.setBaseValue(target);
         }
         if (p.getHealth() > p.getMaxHealth()) {
             p.setHealth(p.getMaxHealth());
         }
     }
 
-    /** 周期性刷新增益（防止被死亡/牛奶清除后失效），并按阶段与维度切换增益组。 */
+    /** 周期性刷新增益（防止被死亡/牛奶清除后失效），并按档位与维度切换增益组。 */
     public static void refreshBuffs(ServerPlayer p) {
         if (!ManhuntGame.isParticipant(p.getUUID())) {
             return;
@@ -48,17 +55,16 @@ public final class TeamUtil {
         // 时长大于刷新间隔，ambient=true 不显示粒子
         int dur = GameConfig.BUFF_REFRESH_INTERVAL_TICKS * 3;
         if (isRunner(p)) {
-            if (p.level().dimension() == net.minecraft.world.level.Level.END) {
-                // 末地强化：抗性提升 2、速度 1、跳跃提升 2、饱和 1、急迫 2
-                add(p, MobEffects.RESISTANCE, dur, 1);
-                add(p, MobEffects.SPEED, dur, 0);
-                add(p, MobEffects.JUMP_BOOST, dur, 1);
+            TierSystem.RunnerStats s = TierSystem.runner();
+            if (p.level().dimension() == Level.END) {
+                add(p, MobEffects.RESISTANCE, dur, s.endResistanceLevel() - 1);
+                add(p, MobEffects.SPEED, dur, s.endSpeedLevel() - 1);
+                add(p, MobEffects.JUMP_BOOST, dur, s.endJumpLevel() - 1);
                 add(p, MobEffects.SATURATION, dur, 0);
-                add(p, MobEffects.HASTE, dur, 1);
+                add(p, MobEffects.HASTE, dur, s.hasteLevel() - 1);
             } else {
-                // 常规：抗性提升 1、急迫 1
-                add(p, MobEffects.RESISTANCE, dur, 0);
-                add(p, MobEffects.HASTE, dur, 0);
+                add(p, MobEffects.RESISTANCE, dur, s.resistanceLevel() - 1);
+                add(p, MobEffects.HASTE, dur, s.hasteLevel() - 1);
             }
         } else {
             if (ManhuntGame.phase() == ManhuntGame.Phase.ESCAPE) {
@@ -67,15 +73,15 @@ public final class TeamUtil {
                 add(p, MobEffects.SLOWNESS, dur, 5);
                 add(p, MobEffects.WEAKNESS, dur, 1);
             } else {
-                // 猎人常规：速度 1、急迫 1
-                add(p, MobEffects.SPEED, dur, 0);
-                add(p, MobEffects.HASTE, dur, 0);
+                TierSystem.HunterStats s = TierSystem.hunter();
+                add(p, MobEffects.SPEED, dur, s.speedLevel() - 1);
+                add(p, MobEffects.HASTE, dur, s.hasteLevel() - 1);
             }
         }
     }
 
-    private static void add(ServerPlayer p, net.minecraft.core.Holder<net.minecraft.world.effect.MobEffect> effect, int dur, int amp) {
-        p.addEffect(new MobEffectInstance(effect, dur, amp, true, false), null);
+    private static void add(ServerPlayer p, Holder<MobEffect> effect, int dur, int amp) {
+        p.addEffect(new MobEffectInstance(effect, dur, Math.max(0, amp), true, false), null);
     }
 
     /** 追逐开始时清除猎人身上的定身减益。 */
@@ -107,6 +113,8 @@ public final class TeamUtil {
         }
         p.removeAllEffects();
         p.setHealth(p.getMaxHealth());
+        p.experienceLevel = 0;
+        p.experienceProgress = 0.0F;
         p.sendSystemMessage(Component.literal("§7[猎人游戏] 属性已恢复默认。"));
     }
 }

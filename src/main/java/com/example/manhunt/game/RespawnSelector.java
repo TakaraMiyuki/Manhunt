@@ -24,10 +24,10 @@ public final class RespawnSelector {
     /**
      * 规则：
      * <ul>
-     *   <li>在末地被击杀 → 复活在 4 号检查点附近 {@code END_RESPAWN_RADIUS} 格（主世界）；</li>
+     *   <li>在末地被击杀 → 复活在最近激活检查点（通常为要塞）附近 {@code END_RESPAWN_RADIUS} 格（主世界）；</li>
      *   <li>其他情况 → 距最近逃生者 &gt;{@code HUNTER_RESPAWN_MIN_DIST} 格的存活猎人中，
      *       选距逃生者最远者，在其附近随机复活；</li>
-     *   <li>无合格猎人 → 上一个已激活检查点；再退到世界出生点。</li>
+     *   <li>无合格猎人 → 最近激活的检查点；再退到世界出生点。</li>
      * </ul>
      */
     public static GlobalPos selectHunterRespawn(MinecraftServer server, ServerPlayer deadHunter) {
@@ -35,9 +35,9 @@ public final class RespawnSelector {
         BlockPos base = null;
 
         if (deadHunter.level().dimension() == Level.END) {
-            BlockPos cp4 = ManhuntGame.checkpoint(4);
-            if (cp4 != null) {
-                base = randomNear(overworld, cp4, GameConfig.END_RESPAWN_RADIUS);
+            BlockPos anchor = ManhuntGame.lastCheckpoint();
+            if (anchor != null) {
+                base = randomNear(overworld, anchor, GameConfig.END_RESPAWN_RADIUS);
             }
         }
 
@@ -50,9 +50,7 @@ public final class RespawnSelector {
         }
 
         if (base == null) {
-            BlockPos last = ManhuntGame.unlockedCount() > 0
-                ? ManhuntGame.checkpoint(ManhuntGame.unlockedCount())
-                : null;
+            BlockPos last = ManhuntGame.lastCheckpoint();
             if (last != null) {
                 base = randomNear(overworld, last, 32);
             }

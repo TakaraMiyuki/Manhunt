@@ -25,3 +25,12 @@ description='''
     versionRange="${minecraft_version_range}"
     ordering="NONE"
     side="BOTH"
+
+# 技能卡模组（可选）：同时安装时检查点可抽技能卡。
+# 注意 ordering 必须为 NONE——SkillCards 侧已声明 AFTER manhunt，双方 AFTER 会构成依赖环
+[[dependencies.${mod_id}]]
+    modId="skillcards"
+    type="optional"
+    versionRange="[0.1.0-beta,)"
+    ordering="NONE"
+    side="BOTH"

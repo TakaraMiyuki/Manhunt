@@ -1,5 +1,7 @@
 package com.example.manhunt.game;
 
+import java.util.UUID;
+
 import com.example.manhunt.GameConfig;
 
 import net.minecraft.core.BlockPos;
@@ -19,7 +21,8 @@ import net.minecraft.world.level.block.Blocks;
 import net.minecraft.world.phys.Vec3;
 
 /**
- * 检查点生成、标记与激活判定。
+ * 检查点链：数量不限、逐个解锁（间隔 400~600 格）。
+ * 任一逃生者里程达到阈值后，下一个检查点固定指向末地要塞（要塞正上方地表）。
  */
 public final class CheckpointManager {
     private CheckpointManager() {}
@@ -29,46 +32,51 @@ public final class CheckpointManager {
     private static final TagKey<Structure> STRONGHOLD_TAG =
         TagKey.create(Registries.STRUCTURE, Identifier.fromNamespaceAndPath("manhunt", "stronghold_finder"));
 
-    /**
-     * 生成全部 4 个检查点：
-     * 1 号距世界出生点 1000~1500 格；2/3 号距上一检查点 500~800 格，随机方向，地表选址；
-     * 4 号固定在最近的末地要塞正上方地表。
-     *
-     * @return 错误提示；null 表示全部成功
-     */
-    public static String generateAll(MinecraftServer server) {
+    // ==================== 生成 ====================
+
+    /** 开局生成 1 号检查点（距世界出生点 400~600 格）。 */
+    public static void generateFirst(MinecraftServer server) {
         ServerLevel overworld = server.overworld();
         BlockPos spawn = overworld.getLevelData().getRespawnData().pos();
-
-        BlockPos cp1 = pickSurfacePoint(overworld, spawn,
-            GameConfig.CP1_MIN_DIST, GameConfig.CP1_MAX_DIST);
-        ManhuntGame.setCheckpoint(0, cp1);
-
-        BlockPos prev = cp1;
-        for (int i = 1; i <= 2; i++) {
-            prev = pickSurfacePoint(overworld, prev,
-                GameConfig.CP_STEP_MIN_DIST, GameConfig.CP_STEP_MAX_DIST);
-            ManhuntGame.setCheckpoint(i, prev);
-        }
-
-        String warning = null;
-        BlockPos cp4 = findStrongholdSurface(overworld, prev);
-        if (cp4 == null) {
-            // 从世界出生点再找一次；仍找不到则退化为随机点
-            cp4 = findStrongholdSurface(overworld, spawn);
-            if (cp4 == null) {
-                cp4 = pickSurfacePoint(overworld, prev,
-                    GameConfig.CP_STEP_MIN_DIST, GameConfig.CP_STEP_MAX_DIST);
-                warning = "未找到末地要塞，4 号检查点已退化为随机位置（找不到时可用 /locate structure minecraft:stronghold 手动确认）";
-            }
-        }
-        ManhuntGame.setCheckpoint(3, cp4);
-
-        for (int i = 1; i <= GameConfig.CHECKPOINT_COUNT; i++) {
-            placeMarker(overworld, ManhuntGame.checkpoint(i));
-        }
-        return warning;
+        ManhuntGame.setCurrentCheckpoint(pickSurfacePoint(overworld, spawn,
+            GameConfig.CP_MIN_DIST, GameConfig.CP_MAX_DIST), false);
     }
+
+    /** 激活当前检查点后的链推进：发放奖励并生成下一个。 */
+    public static void onActivated(MinecraftServer server, ServerPlayer activator) {
+        boolean isStronghold = ManhuntGame.isCurrentStronghold();
+        ManhuntGame.onCheckpointActivated(server, activator, isStronghold);
+        if (isStronghold) {
+            // 要塞检查点为最后一个：目标转为击杀末影龙
+            ManhuntGame.setCurrentCheckpoint(null, false);
+            return;
+        }
+        ServerLevel overworld = server.overworld();
+        BlockPos prev = ManhuntGame.lastCheckpoint();
+        if (ManhuntGame.nextStrongholdForced() || MileageManager.anyRunnerReachedStronghold(server)) {
+            ManhuntGame.resetStrongholdForce();
+            BlockPos stronghold = findStrongholdSurface(overworld, prev);
+            if (stronghold == null) {
+                stronghold = findStrongholdSurface(overworld, overworld.getLevelData().getRespawnData().pos());
+            }
+            if (stronghold != null) {
+                ManhuntGame.setCurrentCheckpoint(stronghold, true);
+                ManhuntGame.sendToRunners(server, "§6[猎人游戏] §d里程达标！下一个检查点：末地要塞（坐标 "
+                    + stronghold.getX() + ", " + stronghold.getY() + ", " + stronghold.getZ()
+                    + "，要塞入口在其地下）");
+                placeMarker(overworld, stronghold);
+                return;
+            }
+            ManhuntGame.broadcast(server, "§c[猎人游戏] 未能定位末地要塞，可让管理员用 /locate structure minecraft:stronghold 确认。");
+        }
+        BlockPos next = pickSurfacePoint(overworld, prev, GameConfig.CP_MIN_DIST, GameConfig.CP_MAX_DIST);
+        ManhuntGame.setCurrentCheckpoint(next, false);
+        placeMarker(overworld, next);
+        ManhuntGame.sendToRunners(server, "§6[猎人游戏] §f下一个检查点坐标: §e"
+            + next.getX() + ", " + next.getY() + ", " + next.getZ());
+    }
+
+    // ==================== 选址 ====================
 
     /**
      * 取 (x, z) 地表高度。注意：区块未加载时 Level.getHeight 会返回世界最低 Y，
@@ -96,7 +104,8 @@ public final class CheckpointManager {
             }
         }
         // 多次重试失败则放宽要求取最后一个候选
-        return fallback != null ? fallback : new BlockPos(from.getX(), surfaceY(level, from.getX(), from.getZ()), from.getZ());
+        return fallback != null ? fallback
+            : new BlockPos(from.getX(), surfaceY(level, from.getX(), from.getZ()), from.getZ());
     }
 
     private static boolean isGoodSurface(ServerLevel level, BlockPos pos) {
@@ -136,7 +145,9 @@ public final class CheckpointManager {
         level.setBlock(pos.above(2), Blocks.GLOWSTONE.defaultBlockState(), 3);
     }
 
-    /** 每刻（低频）检查在线逃生者是否触及当前检查点。 */
+    // ==================== 激活判定 ====================
+
+    /** 低频检查在线逃生者是否触及当前检查点。 */
     public static void checkActivations(MinecraftServer server) {
         BlockPos cp = ManhuntGame.currentCheckpoint();
         if (cp == null) {
@@ -146,9 +157,25 @@ public final class CheckpointManager {
         Vec3 center = Vec3.atCenterOf(cp);
         for (ServerPlayer p : ManhuntGame.onlineAliveRunners(server)) {
             if (p.distanceToSqr(center) <= radiusSq) {
-                ManhuntGame.activateCheckpoint(server, p);
+                activate(server, p);
                 return; // 一次 tick 只激活一个
             }
         }
+    }
+
+    /** 调试指令 / 靠近触发统一入口。 */
+    public static void activate(MinecraftServer server, ServerPlayer activator) {
+        onActivated(server, activator);
+    }
+
+    /** 供指令展示：最近激活检查点。 */
+    public static String describeCurrent(UUID viewer) {
+        BlockPos cp = ManhuntGame.currentCheckpoint();
+        if (cp == null) {
+            return "§d全部检查点已激活，前往末地击杀末影龙！";
+        }
+        return (ManhuntGame.isCurrentStronghold() ? "§d末地要塞" : "§e第 " + (ManhuntGame.activatedCount() + 1) + " 个检查点")
+            + " §7@ §f" + cp.getX() + ", " + cp.getY() + ", " + cp.getZ()
+            + " §7(激活数 " + ManhuntGame.activatedCount() + ")";
     }
 }

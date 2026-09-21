@@ -9,7 +9,10 @@ import java.util.Set;
 import java.util.UUID;
 
 import com.example.manhunt.GameConfig;
+import com.example.manhunt.cards.CardSlotManager;
+import com.example.manhunt.cards.SkillCardsBridge;
 import com.example.manhunt.item.CompassManager;
+import com.example.manhunt.net.LootRollPayload;
 
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.GlobalPos;
@@ -25,6 +28,7 @@ import net.neoforged.neoforge.event.tick.ServerTickEvent;
 /**
  * 游戏核心状态机与每刻调度。
  * 阶段：IDLE → ESCAPE(60 秒逃跑倒计时) → RUNNING → ENDED。
+ * 检查点为无限链：逐个解锁；任一逃生者里程达标后下一个固定为末地要塞。
  */
 public final class ManhuntGame {
     private ManhuntGame() {}
@@ -35,18 +39,24 @@ public final class ManhuntGame {
     private static final Set<UUID> HUNTERS = new HashSet<>();
     private static final Set<UUID> RUNNERS = new HashSet<>();
     private static final Set<UUID> ELIMINATED = new HashSet<>();
-    /** 已激活的检查点数量（0~4）。 */
-    private static int unlocked = 0;
-    /** 四个检查点坐标（主世界地表）。 */
-    private static final BlockPos[] CHECKPOINTS = new BlockPos[GameConfig.CHECKPOINT_COUNT];
+    /** 单人调试模式：无猎人开局，逃生者死亡不结算胜负。 */
+    private static boolean soloMode = false;
+    /** 当前目标检查点；null 表示已进入末地阶段（杀龙）。 */
+    private static BlockPos currentCheckpoint;
+    /** 当前检查点是否为末地要塞。 */
+    private static boolean currentIsStronghold = false;
+    /** 调试强制：下一个刷新的检查点为要塞。 */
+    private static boolean forceNextStronghold = false;
+    /** 最近激活的检查点（复活兜底锚点）。 */
+    private static BlockPos lastCheckpoint;
+    private static int activatedCount = 0;
     private static int escapeTicksLeft = 0;
     private static int tickCounter = 0;
 
     private static ServerBossEvent countdownBar;
     private static ServerBossEvent checkpointBar;
 
-    /** 猎人死亡后待重生传送：uuid → 目标位置与剩余等待刻数。 */
-    private record RespawnRequest(GlobalPos pos, int maxWait) {}
+    /** 猎人死亡后待重生传送：uuid → 目标位置。 */
     private static final Map<UUID, GlobalPos> PENDING_RESPAWNS = new HashMap<>();
     private static final Map<UUID, Integer> RESPAWN_WAITS = new HashMap<>();
 
@@ -68,33 +78,48 @@ public final class ManhuntGame {
 
     public static Set<UUID> runners() { return RUNNERS; }
 
-    public static int unlockedCount() { return unlocked; }
+    public static boolean soloMode() { return soloMode; }
 
-    /** 逃生者当前目标检查点（1-based 序号；全部解锁后返回 0）。 */
-    public static int currentCheckpointNumber() { return unlocked < GameConfig.CHECKPOINT_COUNT ? unlocked + 1 : 0; }
+    public static int activatedCount() { return activatedCount; }
 
-    public static BlockPos checkpoint(int index1based) {
-        if (index1based < 1 || index1based > GameConfig.CHECKPOINT_COUNT) {
-            return null;
-        }
-        return CHECKPOINTS[index1based - 1];
+    public static BlockPos currentCheckpoint() { return currentCheckpoint; }
+
+    public static boolean isCurrentStronghold() { return currentIsStronghold; }
+
+    public static BlockPos lastCheckpoint() { return lastCheckpoint; }
+
+    public static void setCurrentCheckpoint(BlockPos pos, boolean stronghold) {
+        currentCheckpoint = pos;
+        currentIsStronghold = pos != null && stronghold;
     }
 
-    public static BlockPos currentCheckpoint() {
-        return unlocked < GameConfig.CHECKPOINT_COUNT ? CHECKPOINTS[unlocked] : null;
+    public static void forceNextStronghold() {
+        forceNextStronghold = true;
     }
 
-    public static void setCheckpoint(int index0based, BlockPos pos) { CHECKPOINTS[index0based] = pos; }
+    public static boolean nextStrongholdForced() {
+        return forceNextStronghold;
+    }
+
+    static void resetStrongholdForce() {
+        forceNextStronghold = false;
+    }
 
     // ==================== 生命周期 ====================
 
-    /** 开局：分配已就绪的队伍、生成检查点、进入逃跑倒计时。 */
-    public static String start(MinecraftServer server, Set<UUID> hunters, Set<UUID> runners) {
+    /**
+     * 开局：分配队伍、生成首个检查点、进入逃跑倒计时。
+     * @return 错误提示；null 表示成功
+     */
+    public static String start(MinecraftServer server, Set<UUID> hunters, Set<UUID> runners, boolean solo) {
         if (isRunning()) {
             return "游戏已在进行中，请先 /manhunt stop。";
         }
-        if (hunters.isEmpty() || runners.isEmpty()) {
-            return "猎人与逃生者都必须至少 1 人。";
+        if (!solo && (hunters.isEmpty() || runners.isEmpty())) {
+            return "猎人与逃生者都必须至少 1 人（单人调试请用 /manhunt debug solo）。";
+        }
+        if (solo && runners.isEmpty()) {
+            return "单人模式至少需要 1 名逃生者。";
         }
         HUNTERS.clear();
         RUNNERS.clear();
@@ -103,10 +128,18 @@ public final class ManhuntGame {
         RUNNERS.addAll(runners);
         PENDING_RESPAWNS.clear();
         RESPAWN_WAITS.clear();
+        soloMode = solo;
+        activatedCount = 0;
+        currentCheckpoint = null;
+        currentIsStronghold = false;
+        lastCheckpoint = null;
+        forceNextStronghold = false;
+        MileageManager.reset();
+        MoraleManager.reset();
+        CardSlotManager.reset();
+        TierSystem.reset();
 
-        // 生成检查点
-        String cpError = CheckpointManager.generateAll(server);
-        unlocked = 0;
+        CheckpointManager.generateFirst(server);
 
         // 集合：所有在线参与者传送到世界出生点
         ServerLevel overworld = server.overworld();
@@ -119,7 +152,6 @@ public final class ManhuntGame {
         escapeTicksLeft = GameConfig.ESCAPE_SECONDS * 20;
         tickCounter = 0;
 
-        // 倒计时 bossbar（全体参与者）
         countdownBar = new ServerBossEvent(
             UUID.randomUUID(),
             Component.literal("§a逃生时间 " + GameConfig.ESCAPE_SECONDS + "s"),
@@ -131,17 +163,25 @@ public final class ManhuntGame {
             if (TeamUtil.isRunner(p)) {
                 TeamUtil.giveInitialKit(p);
                 CompassManager.giveCheckpointCompass(p);
+                MileageManager.syncMeter(p);
+            } else {
+                MoraleManager.syncMeter(p);
             }
             countdownBar.addPlayer(p);
-            p.sendSystemMessage(Component.literal(
-                "§e[猎人游戏] 你是 §a逃生者§e！60 秒后猎人开始追杀。激活 4 个检查点并击杀末影龙即可获胜！"));
-            p.sendSystemMessage(Component.literal(
-                "§e[猎人游戏] 你是 §c猎人§e！60 秒倒计时结束后开始追杀所有逃生者。"));
+            if (TeamUtil.isRunner(p)) {
+                p.sendSystemMessage(Component.literal(
+                    "§e[猎人游戏] 你是 §a逃生者§e！60 秒后猎人开始追杀。沿检查点链前进，里程达标后前往末地击杀末影龙！"));
+                p.sendSystemMessage(Component.literal(
+                    "§e[猎人游戏] 每移动 " + GameConfig.MILEAGE_PER_ROLL + " 格触发一次资源抽奖；激活检查点可抽技能卡。"));
+            } else {
+                p.sendSystemMessage(Component.literal(
+                    "§e[猎人游戏] 你是 §c猎人§e！60 秒倒计时结束后开始追杀所有逃生者。对逃生者造成伤害会积累全队士气并获得超级抽奖。"));
+            }
         }
-        broadcast(server, "§6[猎人游戏] §f游戏开始！§a逃生者 " + runners.size() + " 人 §7| §c猎人 " + hunters.size() + " 人");
-        broadcast(server, "§6[猎人游戏] §f1 号检查点已解锁，逃生者罗盘已指向目标。");
-        if (cpError != null) {
-            broadcast(server, "§c[猎人游戏] 检查点生成警告: " + cpError);
+        if (solo) {
+            broadcast(server, "§6[猎人游戏] §b单人调试模式开始（无猎人，死亡不结算）。");
+        } else {
+            broadcast(server, "§6[猎人游戏] §f游戏开始！§a逃生者 " + runners.size() + " 人 §7| §c猎人 " + hunters.size() + " 人");
         }
         ManhuntStateIO.save(server);
         return null;
@@ -158,6 +198,7 @@ public final class ManhuntGame {
     private static void cleanup(MinecraftServer server) {
         phase = Phase.IDLE;
         escapeTicksLeft = 0;
+        soloMode = false;
         if (countdownBar != null) {
             for (ServerPlayer p : new ArrayList<>(countdownBar.getPlayers())) {
                 countdownBar.removePlayer(p);
@@ -170,6 +211,9 @@ public final class ManhuntGame {
             }
             checkpointBar = null;
         }
+        MileageManager.reset();
+        MoraleManager.reset();
+        CardSlotManager.reset();
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
             if (isParticipant(p.getUUID())) {
                 TeamUtil.resetToDefault(p);
@@ -189,7 +233,6 @@ public final class ManhuntGame {
             }
             countdownBar = null;
         }
-        // 检查点进度 bossbar（逃生者）
         checkpointBar = new ServerBossEvent(
             UUID.randomUUID(),
             Component.literal("检查点进度"),
@@ -199,17 +242,20 @@ public final class ManhuntGame {
             if (TeamUtil.isHunter(p)) {
                 TeamUtil.clearEscapeDebuffs(p);
                 CompassManager.giveTrackingCompass(p);
+                MoraleManager.syncMeter(p);
             }
             if (TeamUtil.isRunner(p) && !isEliminated(p.getUUID())) {
                 checkpointBar.addPlayer(p);
             }
             TeamUtil.refreshBuffs(p);
         }
-        broadcast(server, "§6[猎人游戏] §c逃跑时间结束！猎人已开始追杀！");
+        if (!soloMode) {
+            broadcast(server, "§6[猎人游戏] §c逃跑时间结束！猎人已开始追杀！");
+        }
         ManhuntStateIO.save(server);
     }
 
-    // ==================== 事件回调 ====================
+    // ==================== 每刻调度 ====================
 
     public static void onServerTick(ServerTickEvent.Post event) {
         MinecraftServer server = event.getServer();
@@ -219,9 +265,7 @@ public final class ManhuntGame {
             escapeTicksLeft--;
             if (escapeTicksLeft <= 0) {
                 beginChase(server);
-                return;
-            }
-            if (tickCounter % 20 == 0 && countdownBar != null) {
+            } else if (tickCounter % 20 == 0 && countdownBar != null) {
                 countdownBar.setName(Component.literal(
                     "§a逃生时间 " + (escapeTicksLeft / 20) + "s"));
                 countdownBar.setProgress(escapeTicksLeft / (float) (GameConfig.ESCAPE_SECONDS * 20));
@@ -233,6 +277,17 @@ public final class ManhuntGame {
         }
         tickCounter++;
 
+        // 里程累计（每刻）
+        MileageManager.tick(server);
+
+        if (tickCounter % GameConfig.METER_SYNC_INTERVAL_TICKS == 0) {
+            for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+                if (isParticipant(p.getUUID())) {
+                    MileageManager.syncMeter(p);
+                    MoraleManager.syncMeter(p);
+                }
+            }
+        }
         if (tickCounter % GameConfig.BUFF_REFRESH_INTERVAL_TICKS == 0) {
             for (ServerPlayer p : server.getPlayerList().getPlayers()) {
                 if (isParticipant(p.getUUID())) {
@@ -240,8 +295,15 @@ public final class ManhuntGame {
                 }
             }
         }
+        if (tickCounter % GameConfig.TIER_RECALC_INTERVAL_TICKS == 0 && TierSystem.recalculate(server)) {
+            broadcast(server, "§6[猎人游戏] §e人数比变化：性能档位调整为 §f" + TierSystem.displayTier() + " §e级"
+                + (TierSystem.forcedTier() != null ? "（已锁定）" : ""));
+        }
         if (tickCounter % GameConfig.COMPASS_UPDATE_INTERVAL_TICKS == 0) {
             CompassManager.updateAll(server);
+        }
+        if (tickCounter % GameConfig.CARD_SLOT_GUARD_INTERVAL_TICKS == 0) {
+            CardSlotManager.tickGuard(server);
         }
         if (tickCounter % GameConfig.BOSSBAR_UPDATE_INTERVAL_TICKS == 0 && checkpointBar != null) {
             updateCheckpointBossbar(server);
@@ -252,13 +314,12 @@ public final class ManhuntGame {
     }
 
     private static void updateCheckpointBossbar(MinecraftServer server) {
-        BlockPos cp = currentCheckpoint();
+        BlockPos cp = currentCheckpoint;
         if (cp == null) {
-            checkpointBar.setName(Component.literal("§e检查点 4/4 已激活 §7- 前往末地击杀§d末影龙§7！"));
+            checkpointBar.setName(Component.literal("§d前往末地击杀§5末影龙§d！"));
             checkpointBar.setProgress(1.0F);
             return;
         }
-        // 以最近在线逃生者的距离显示
         double minDistSq = Double.MAX_VALUE;
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
             if (TeamUtil.isRunner(p) && !isEliminated(p.getUUID())) {
@@ -266,54 +327,62 @@ public final class ManhuntGame {
             }
         }
         int dist = minDistSq == Double.MAX_VALUE ? 0 : (int) Math.sqrt(minDistSq);
-        int number = unlocked + 1;
-        checkpointBar.setName(Component.literal("§e检查点 " + number + "/4 §7- 距离 §f" + dist + "m"));
-        checkpointBar.setProgress(Math.max(0.05F, 1.0F - Math.min(1.0F, dist / 1500.0F)));
+        String label = currentIsStronghold ? "§d末地要塞" : "§e检查点 " + (activatedCount + 1);
+        checkpointBar.setName(Component.literal(label + " §7- 距离 §f" + dist + "m"));
+        checkpointBar.setProgress(Math.max(0.05F, 1.0F - Math.min(1.0F, dist / 1000.0F)));
     }
 
-    // ==================== 检查点 ====================
+    // ==================== 检查点激活 ====================
 
-    /** 逃生者激活当前检查点（已由 CheckpointManager 校验位置与身份）。 */
-    public static void activateCheckpoint(MinecraftServer server, ServerPlayer activator) {
-        int number = unlocked + 1;
-        unlocked++;
+    /** 由 CheckpointManager 在激活判定后调用：结算奖励并记录。 */
+    public static void onCheckpointActivated(MinecraftServer server, ServerPlayer activator, boolean isStronghold) {
+        activatedCount++;
+        lastCheckpoint = currentCheckpoint;
+        String label = isStronghold ? "§d末地要塞" : "§e第 " + activatedCount + " 个检查点";
         broadcast(server, "§6[猎人游戏] §a逃生者 §f" + activator.getName().getString()
-            + " §a激活了第 " + number + " 个检查点！物资已发放。");
-        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-            if (TeamUtil.isRunner(p) && !isEliminated(p.getUUID())) {
-                LootProvider.giveCheckpointLoot(p, number);
+            + " §a激活了" + label + "！");
+
+        // 技能卡：激活者抽取（要塞固定彩卡）
+        if (SkillCardsBridge.available()) {
+            net.minecraft.util.RandomSource rng = net.minecraft.util.RandomSource.create();
+            SkillCardsBridge.CardDraw draw = isStronghold
+                ? SkillCardsBridge.drawRainbow(rng)
+                : SkillCardsBridge.drawRandom(rng);
+            if (draw != null) {
+                CardSlotManager.giveDrawnCard(activator, draw);
+                // 动画（激活者）
+                sendRoll(activator, LootRollPayload.TYPE_CARD,
+                    List.of(draw.stack()), SkillCardsBridge.cardAccent(draw));
             }
         }
-        if (unlocked >= GameConfig.CHECKPOINT_COUNT) {
-            broadcast(server, "§6[猎人游戏] §d全部检查点已激活！逃生者已获得鞘翅与末影之眼，击杀§5末影龙§d即获胜！");
-        } else {
-            BlockPos next = CHECKPOINTS[unlocked];
-            if (next != null) {
-                String hint = unlocked == GameConfig.CHECKPOINT_COUNT - 1
-                    ? " §d(4 号检查点位于末地要塞正上方，要塞入口在地下！)"
-                    : "";
-                sendToRunners(server, "§6[猎人游戏] §f下一个检查点坐标: §e" + next.getX() + ", " + next.getY() + ", " + next.getZ() + hint);
+
+        // 超级抽奖：全体存活逃生者
+        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+            if (TeamUtil.isRunner(p) && !isEliminated(p.getUUID())) {
+                com.example.manhunt.loot.LootRoller.superRoll(p);
             }
         }
         if (checkpointBar != null) {
-            checkpointBar.setProgress(unlocked / (float) GameConfig.CHECKPOINT_COUNT);
+            checkpointBar.setProgress(Math.min(1.0F, activatedCount / 10.0F));
         }
         ManhuntStateIO.save(server);
     }
 
+    private static void sendRoll(ServerPlayer p, int type, List<net.minecraft.world.item.ItemStack> items, int accent) {
+        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(p,
+            new LootRollPayload(type, items, accent));
+    }
+
     // ==================== 死亡与胜负 ====================
 
-    /** 逃生者击杀猎人：全体逃生者获得生命恢复。 */
-    public static void onHunterKilledByRunner(MinecraftServer server) {
-        for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-            if (TeamUtil.isRunner(p) && !isEliminated(p.getUUID())) {
-                p.addEffect(new net.minecraft.world.effect.MobEffectInstance(
-                    net.minecraft.world.effect.MobEffects.REGENERATION,
-                    GameConfig.KILL_REGEN_SECONDS * 20,
-                    GameConfig.KILL_REGEN_AMPLIFIER), null);
-            }
-        }
-        broadcast(server, "§6[猎人游戏] §c一名猎人被击杀！逃生者获得 §a生命恢复 III (" + GameConfig.KILL_REGEN_SECONDS + "s)");
+    /** 逃生者击杀猎人：击杀者恢复 20% 最大生命。 */
+    public static void onHunterKilledByRunner(MinecraftServer server, ServerPlayer killer) {
+        float heal = (float) (killer.getMaxHealth() * GameConfig.KILLER_HEAL_FRACTION);
+        killer.heal(heal);
+        killer.sendSystemMessage(Component.literal(
+            "§6[猎人游戏] §a击杀猎人！恢复 " + (int) (GameConfig.KILLER_HEAL_FRACTION * 100) + "% 生命（+"
+                + String.format("%.0f", heal) + "）"));
+        broadcast(server, "§6[猎人游戏] §c一名猎人被 §f" + killer.getName().getString() + " §c击杀！");
     }
 
     /** 猎人死亡后规划复活位置（重生后由 tick 传送）。 */
@@ -323,12 +392,12 @@ public final class ManhuntGame {
         RESPAWN_WAITS.put(deadHunter.getUUID(), GameConfig.RESPAWN_TELEPORT_MAX_WAIT);
     }
 
-    /** 逃生者死亡：淘汰；全部淘汰则猎人获胜。 */
+    /** 逃生者死亡：淘汰；全部淘汰则猎人获胜（单人调试模式除外）。 */
     public static void onRunnerDeath(MinecraftServer server, ServerPlayer deadRunner) {
         ELIMINATED.add(deadRunner.getUUID());
         broadcast(server, "§6[猎人游戏] §a逃生者 §f" + deadRunner.getName().getString() + " §c被淘汰！"
             + " (剩余 " + aliveRunnerCount() + " 人)");
-        if (aliveRunnerCount() == 0) {
+        if (!soloMode && aliveRunnerCount() == 0) {
             endGame(server, "§c猎人获胜！所有逃生者已被淘汰。");
         }
         ManhuntStateIO.save(server);
@@ -367,7 +436,6 @@ public final class ManhuntGame {
         for (Map.Entry<UUID, GlobalPos> e : PENDING_RESPAWNS.entrySet()) {
             ServerPlayer p = server.getPlayerList().getPlayer(e.getKey());
             if (p == null) {
-                // 尚未点击重生，继续等待直到超时
                 int wait = RESPAWN_WAITS.getOrDefault(e.getKey(), 0) - 1;
                 if (wait <= 0) {
                     done.add(e.getKey());
@@ -380,12 +448,13 @@ public final class ManhuntGame {
             ServerLevel level = server.getLevel(pos.dimension());
             if (level != null) {
                 BlockPos bp = pos.pos();
-                double x = bp.getX() + 0.5, z = bp.getZ() + 0.5;
-                double y = bp.getY() + 1;
-                p.teleportTo(level, x, y, z, Set.of(), p.getYRot(), p.getXRot(), false);
+                p.teleportTo(level, bp.getX() + 0.5, bp.getY() + 1, bp.getZ() + 0.5,
+                    Set.of(), p.getYRot(), p.getXRot(), false);
             }
             TeamUtil.applyBaseAttributes(p);
             TeamUtil.refreshBuffs(p);
+            MileageManager.syncMeter(p);
+            MoraleManager.syncMeter(p);
             done.add(e.getKey());
         }
         for (UUID id : done) {
@@ -442,8 +511,13 @@ public final class ManhuntGame {
 
     static Phase rawPhase() { return phase; }
 
+    static boolean rawSoloMode() { return soloMode; }
+
+    static BlockPos rawLastCheckpoint() { return lastCheckpoint; }
+
     static void restoreState(Phase p, Set<UUID> hunters, Set<UUID> runners, Set<UUID> eliminated,
-                             int unlockedCount, BlockPos[] checkpoints) {
+                             int activated, BlockPos currentCp, boolean stronghold,
+                             BlockPos lastCp, boolean solo) {
         phase = p;
         HUNTERS.clear();
         HUNTERS.addAll(hunters);
@@ -451,21 +525,20 @@ public final class ManhuntGame {
         RUNNERS.addAll(runners);
         ELIMINATED.clear();
         ELIMINATED.addAll(eliminated);
-        unlocked = unlockedCount;
-        for (int i = 0; i < CHECKPOINTS.length && i < checkpoints.length; i++) {
-            CHECKPOINTS[i] = checkpoints[i];
-        }
+        activatedCount = activated;
+        currentCheckpoint = currentCp;
+        currentIsStronghold = stronghold && currentCp != null;
+        lastCheckpoint = lastCp;
+        soloMode = solo;
         escapeTicksLeft = 0;
     }
-
-    static boolean hasCheckpointBar() { return checkpointBar != null; }
 
     static void reattachBossbars(MinecraftServer server) {
         if (phase == Phase.RUNNING) {
             checkpointBar = new ServerBossEvent(UUID.randomUUID(),
                 Component.literal("检查点进度"),
                 BossEvent.BossBarColor.YELLOW, BossEvent.BossBarOverlay.PROGRESS);
-            checkpointBar.setProgress(unlocked / (float) GameConfig.CHECKPOINT_COUNT);
+            checkpointBar.setProgress(Math.min(1.0F, activatedCount / 10.0F));
             for (ServerPlayer p : server.getPlayerList().getPlayers()) {
                 if (TeamUtil.isRunner(p) && !isEliminated(p.getUUID())) {
                     checkpointBar.addPlayer(p);

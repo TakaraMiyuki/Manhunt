@@ -68,6 +68,35 @@ public final class CompassManager {
         }
     }
 
+    /** 按阵营补发对应罗盘（登录/复活时调用）。 */
+    public static void ensureCompasses(ServerPlayer p) {
+        if (TeamUtil.isHunter(p)) {
+            boolean has = false;
+            var items = p.getInventory().getNonEquipmentItems();
+            for (ItemStack stack : items) {
+                if (stack.is(ManhuntItems.TRACKING_COMPASS.get())) {
+                    has = true;
+                    break;
+                }
+            }
+            if (!has) {
+                giveTrackingCompass(p);
+            }
+        } else if (TeamUtil.isRunner(p) && !ManhuntGame.isEliminated(p.getUUID())) {
+            boolean has = false;
+            var items = p.getInventory().getNonEquipmentItems();
+            for (ItemStack stack : items) {
+                if (stack.is(ManhuntItems.CHECKPOINT_COMPASS.get())) {
+                    has = true;
+                    break;
+                }
+            }
+            if (!has) {
+                giveCheckpointCompass(p);
+            }
+        }
+    }
+
     // ==================== 每秒指向刷新 ====================
 
     public static void updateAll(MinecraftServer server) {
@@ -88,10 +117,10 @@ public final class CompassManager {
             });
         }
 
-        // 逃生者罗盘 → 当前目标检查点（主世界）
+        // 逃生者罗盘 → 当前目标检查点（主世界）；进入末地阶段则指向最近激活检查点
         BlockPos objective = ManhuntGame.currentCheckpoint();
         if (objective == null) {
-            objective = ManhuntGame.checkpoint(GameConfig.CHECKPOINT_COUNT);
+            objective = ManhuntGame.lastCheckpoint();
         }
         if (objective != null) {
             GlobalPos target = GlobalPos.of(Level.OVERWORLD, objective);

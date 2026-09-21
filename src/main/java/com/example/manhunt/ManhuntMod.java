@@ -3,13 +3,24 @@ package com.example.manhunt;
 import com.example.manhunt.game.CheckpointManager;
 import com.example.manhunt.game.DeathHandler;
 import com.example.manhunt.game.ManhuntGame;
+import com.example.manhunt.game.MileageManager;
+import com.example.manhunt.game.TierSystem;
 import com.example.manhunt.command.ManhuntCommand;
 import com.example.manhunt.item.CompassManager;
 import com.example.manhunt.item.ManhuntItems;
+import com.example.manhunt.net.ManhuntPayloads;
 import com.mojang.logging.LogUtils;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.entity.living.LivingChangeTargetEvent;
+import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
+import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
+import net.neoforged.neoforge.event.entity.living.LivingDropsEvent;
+import net.neoforged.neoforge.event.entity.living.LivingExperienceDropEvent;
+import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerXpEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
@@ -22,6 +33,7 @@ public final class ManhuntMod {
 
     public ManhuntMod(IEventBus modEventBus) {
         ManhuntItems.ITEMS.register(modEventBus);
+        modEventBus.addListener(ManhuntPayloads::onRegister);
 
         NeoForge.EVENT_BUS.addListener(ManhuntCommand::onRegisterCommands);
         NeoForge.EVENT_BUS.addListener(ManhuntGame::onServerTick);
@@ -29,10 +41,16 @@ public final class ManhuntMod {
         NeoForge.EVENT_BUS.addListener(ManhuntMod::onServerStopping);
         NeoForge.EVENT_BUS.addListener(DeathHandler::onLivingDeath);
         NeoForge.EVENT_BUS.addListener(DeathHandler::onIncomingDamage);
+        NeoForge.EVENT_BUS.addListener(DeathHandler::onDamagePost);
+        NeoForge.EVENT_BUS.addListener(DeathHandler::onChangeTarget);
+        NeoForge.EVENT_BUS.addListener(DeathHandler::onLivingDrops);
+        NeoForge.EVENT_BUS.addListener(DeathHandler::onExperienceDrop);
+        NeoForge.EVENT_BUS.addListener(DeathHandler::onPickupXp);
         NeoForge.EVENT_BUS.addListener(DeathHandler::onPlayerRespawn);
         NeoForge.EVENT_BUS.addListener(DeathHandler::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(DeathHandler::onDimensionChange);
         NeoForge.EVENT_BUS.addListener(CompassManager::onRightClick);
+        NeoForge.EVENT_BUS.addListener(ManhuntMod::onLoggedOut);
     }
 
     private static void onServerStarted(ServerStartedEvent event) {
@@ -43,33 +61,73 @@ public final class ManhuntMod {
         }
     }
 
+    private static void onServerStopping(ServerStoppingEvent event) {
+        ManhuntGame.onServerStopping(event.getServer());
+    }
+
+    private static void onLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
+        MileageManager.onLoggedOut(event.getEntity().getUUID());
+        DeathHandler.onLoggedOut(event.getEntity().getUUID());
+        com.example.manhunt.cards.CardSlotManager.onLoggedOut(event.getEntity().getUUID());
+    }
+
     /**
      * 无玩家冒烟测试（环境变量 MANHUNT_SMOKETEST=1 时启用）：
-     * 验证检查点生成算法与末地要塞定位，日志输出坐标与间距。
+     * 验证检查点生成、要塞定位、奖池抽取、技能卡桥接与档位计算。
      */
     private static void runSmokeTest(net.minecraft.server.MinecraftServer server) {
         try {
-            String warning = CheckpointManager.generateAll(server);
-            net.minecraft.core.BlockPos prev = null;
-            for (int i = 1; i <= 4; i++) {
-                var pos = ManhuntGame.checkpoint(i);
-                if (pos == null) {
-                    LOGGER.error("[Manhunt][冒烟测试] {} 号检查点未生成", i);
-                    continue;
-                }
-                String dist = prev == null ? "-" : String.format("%.0f",
-                    Math.sqrt(prev.distSqr(pos)));
-                LOGGER.info("[Manhunt][冒烟测试] {} 号检查点: {} {}（与上一检查点间距 {} 格）",
-                    i, pos.getX() + ", " + pos.getY() + ", " + pos.getZ(), "", dist);
-                prev = pos;
-            }
-            LOGGER.info("[Manhunt][冒烟测试] 生成警告: {}", warning == null ? "无" : warning);
-        } catch (Exception e) {
-            LOGGER.error("[Manhunt][冒烟测试] 检查点生成失败", e);
-        }
-    }
+            CheckpointManager.generateFirst(server);
+            var cp = ManhuntGame.currentCheckpoint();
+            LOGGER.info("[Manhunt][冒烟测试] 1 号检查点: {}",
+                cp == null ? "未生成" : cp.getX() + ", " + cp.getY() + ", " + cp.getZ());
 
-    private static void onServerStopping(ServerStoppingEvent event) {
-        ManhuntGame.onServerStopping(event.getServer());
+            // 奖池：每个档位抽 5 件验证无异常
+            for (int tier = 0; tier < 5; tier++) {
+                var pool = com.example.manhunt.loot.RewardPools.pool(tier);
+                for (int i = 0; i < 5 && !pool.isEmpty(); i++) {
+                    pool.get(net.minecraft.util.RandomSource.create().nextInt(pool.size())).roll();
+                }
+                LOGGER.info("[Manhunt][冒烟测试] 奖池档位 {} 共 {} 种条目，抽样通过", tier + 1, pool.size());
+            }
+            // 随机附魔书
+            var book = com.example.manhunt.loot.RewardPools.randomBook(3);
+            LOGGER.info("[Manhunt][冒烟测试] 随机附魔书: {}", book.getItem());
+
+            // 技能卡桥接
+            LOGGER.info("[Manhunt][冒烟测试] 技能卡模组可用: {}",
+                com.example.manhunt.cards.SkillCardsBridge.available());
+            if (com.example.manhunt.cards.SkillCardsBridge.available()) {
+                var rng = net.minecraft.util.RandomSource.create();
+                int common = 0, rare = 0, rainbow = 0, black = 0;
+                for (int i = 0; i < 200; i++) {
+                    var draw = com.example.manhunt.cards.SkillCardsBridge.drawRandom(rng);
+                    if (draw == null) {
+                        continue;
+                    }
+                    var grade = com.example.manhunt.cards.SkillCardsBridge.gradeOf(draw.stack());
+                    switch (grade.name()) {
+                        case "COMMON" -> common++;
+                        case "RARE" -> rare++;
+                        case "RAINBOW" -> rainbow++;
+                        case "BLACK" -> black++;
+                        default -> {
+                        }
+                    }
+                }
+                LOGGER.info("[Manhunt][冒烟测试] 200 次抽卡分布: 普通={} 稀有={} 彩卡={} 黑卡={}",
+                    common, rare, rainbow, black);
+            }
+
+            // 档位
+            TierSystem.recalculate(server);
+            LOGGER.info("[Manhunt][冒烟测试] 当前档位: {}", TierSystem.displayTier());
+
+            // 要塞定位
+            var stronghold = com.example.manhunt.game.CheckpointManager.surfaceY(server.overworld(), 0, 0);
+            LOGGER.info("[Manhunt][冒烟测试] surfaceY(0,0) = {}", stronghold);
+        } catch (Exception e) {
+            LOGGER.error("[Manhunt][冒烟测试] 失败", e);
+        }
     }
 }

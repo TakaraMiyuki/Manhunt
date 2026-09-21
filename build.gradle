@@ -11,6 +11,11 @@ base {
     archivesName = mod_id
 }
 
+dependencies {
+    // 技能卡联动（可选依赖）：编译期引用其 jar，运行期未安装时全部抽卡逻辑自动跳过
+    implementation files("${rootDir}/../SkillCards/build/libs/skillcards-0.1.0-beta.jar")
+}
+
 neoForge {
     // Specify the version of NeoForge to use.
     version = project.neo_version
