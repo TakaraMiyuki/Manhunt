@@ -90,6 +90,14 @@ public final class SkillCardsBridge {
         return grade == null ? null : drawOfGrade(grade, rng);
     }
 
+    /** 每局开始/结束时重置技能卡的永久加成（如赤鳞跃动的生命/饥饿上限修改）。 */
+    public static void resetPersistentBonuses(net.minecraft.server.level.ServerPlayer player) {
+        if (!available()) {
+            return;
+        }
+        com.example.skillcards.card.impl.ChiLinCard.reset(player);
+    }
+
     /** 卡牌动画强调色（品级颜色）。 */
     public static int cardAccent(CardDraw draw) {
         var grade = gradeOf(draw.stack());

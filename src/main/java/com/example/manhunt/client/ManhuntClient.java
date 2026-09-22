@@ -54,7 +54,11 @@ public final class ManhuntClient {
         int x = g.guiWidth() / 2 - 90 + 8 * 20 + 2;
         int y = g.guiHeight() - 19;
         long now = mc.level.getGameTime();
-        float pulse = 0.55F + 0.45F * (float) Math.abs(Math.sin((now + delta.getGameTimeDeltaPartialTick(false)) * 0.25));
+        // 技能可用（不在冷却）：金色脉冲；冷却中：静态金框
+        boolean cooling = mc.player.getCooldowns().isOnCooldown(slot);
+        float pulse = cooling
+            ? 0.85F
+            : 0.55F + 0.45F * (float) Math.abs(Math.sin((now + delta.getGameTimeDeltaPartialTick(false)) * 0.25));
         int col = withAlpha(ClientRollManager.accentGold(), pulse);
         g.fill(x - 3, y - 3, x + 19, y - 1, col);
         g.fill(x - 3, y + 17, x + 19, y + 19, col);

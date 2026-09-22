@@ -158,14 +158,14 @@ public final class SkillSlotManager {
                     items.set(i, ItemStack.EMPTY); // 镜像副本，清除防复制
                 }
             }
-            // 技能槽被放入其他物品：退回背包（技能槽为固定栏位）
+            // 技能槽被放入其他物品：经安全入包退回（跳过技能槽，防止再落回原位）
             ItemStack inSlot = items.get(GameConfig.CARD_SLOT);
             if (!inSlot.isEmpty() && !SkillCardsBridge.isSkillCard(inSlot)) {
                 items.set(GameConfig.CARD_SLOT, ItemStack.EMPTY);
-                if (!p.getInventory().add(inSlot)) {
+                if (!com.example.manhunt.util.InvUtil.safeAdd(p, inSlot)) {
                     p.drop(inSlot, false);
                 }
-                p.sendSystemMessage(Component.literal("§7[猎人游戏] 技能槽为固定栏位，物品已退回背包。"), true);
+                p.sendSystemMessage(Component.literal("§7[猎人游戏] 技能槽为固定栏位，物品已移回背包其他栏位。"), true);
             }
             equipActive(p);
         }

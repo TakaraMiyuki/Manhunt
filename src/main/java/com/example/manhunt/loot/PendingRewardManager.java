@@ -35,28 +35,22 @@ public final class PendingRewardManager {
         send(player, new LootRollPayload(type, items, accentOf(type), LootRollPayload.MODE_NEW));
     }
 
-    /** 领取选中的一项，其余保留（中键/回车）。 */
-    public static void claimOne(ServerPlayer player, int index) {
-        Pending pending = PENDING.get(player.getUUID());
-        if (pending == null || index < 0 || index >= pending.remaining().size()) {
-            return;
-        }
-        give(player, pending.remaining().remove(index));
-        player.playSound(net.minecraft.sounds.SoundEvents.EXPERIENCE_ORB_PICKUP, 0.5F, 1.3F);
-        if (pending.remaining().isEmpty()) {
-            PENDING.remove(player.getUUID());
-        }
-        sendRefresh(player, pending);
-    }
-
-    /** 领取选中的一项并退出选择阶段，丢弃未选中的物品（右键）。 */
-    public static void claimAndExit(ServerPlayer player, int index) {
+    /** 领取全部标记物品并关闭待领取，未标记物品丢弃（右键提交）。 */
+    public static void claimMarked(ServerPlayer player, List<Integer> indices) {
         Pending pending = PENDING.remove(player.getUUID());
-        if (pending == null || index < 0 || index >= pending.remaining().size()) {
+        if (pending == null) {
             return;
         }
-        give(player, pending.remaining().get(index));
-        player.playSound(net.minecraft.sounds.SoundEvents.EXPERIENCE_ORB_PICKUP, 0.5F, 1.0F);
+        int claimed = 0;
+        for (int index : indices) {
+            if (index >= 0 && index < pending.remaining().size()) {
+                give(player, pending.remaining().get(index));
+                claimed++;
+            }
+        }
+        if (claimed > 0) {
+            player.playSound(net.minecraft.sounds.SoundEvents.EXPERIENCE_ORB_PICKUP, 0.5F, 1.0F);
+        }
     }
 
     /** 新一轮抽奖前：上一轮未领取的奖励视为放弃（不发放）。 */
@@ -111,7 +105,7 @@ public final class PendingRewardManager {
     }
 
     private static void give(ServerPlayer player, ItemStack stack) {
-        if (!player.getInventory().add(stack)) {
+        if (!com.example.manhunt.util.InvUtil.safeAdd(player, stack)) {
             player.drop(stack, false);
         }
     }

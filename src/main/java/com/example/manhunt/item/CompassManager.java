@@ -44,7 +44,7 @@ public final class CompassManager {
         removeOld(hunter, ManhuntItems.TRACKING_COMPASS.get());
         ItemStack compass = new ItemStack(ManhuntItems.TRACKING_COMPASS.get());
         compass.set(DataComponents.CUSTOM_NAME, Component.literal("§c追踪罗盘 §7(右键切换目标)"));
-        if (!hunter.getInventory().add(compass)) {
+        if (!com.example.manhunt.util.InvUtil.safeAdd(hunter, compass)) {
             hunter.drop(compass, false);
         }
     }
@@ -53,7 +53,7 @@ public final class CompassManager {
         removeOld(runner, ManhuntItems.CHECKPOINT_COMPASS.get());
         ItemStack compass = new ItemStack(ManhuntItems.CHECKPOINT_COMPASS.get());
         compass.set(DataComponents.CUSTOM_NAME, Component.literal("§e检查点罗盘"));
-        if (!runner.getInventory().add(compass)) {
+        if (!com.example.manhunt.util.InvUtil.safeAdd(runner, compass)) {
             runner.drop(compass, false);
         }
     }

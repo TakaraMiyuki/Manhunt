@@ -77,7 +77,7 @@ public final class GameConfig {
     /** 人数档位重算间隔。 */
     public static final int TIER_RECALC_INTERVAL_TICKS = 40;
     /** 技能栏守护间隔（经验条/技能槽镜像）。 */
-    public static final int CARD_SLOT_GUARD_INTERVAL_TICKS = 20;
+    public static final int CARD_SLOT_GUARD_INTERVAL_TICKS = 10;
     /** 抽奖 UI 距屏幕顶部偏移（避让 bossbar/检查点距离显示）。 */
     public static final int ROLL_UI_TOP_OFFSET = 40;
 }

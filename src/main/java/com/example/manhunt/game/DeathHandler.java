@@ -110,7 +110,7 @@ public final class DeathHandler {
             List<ItemStack> saved = SAVED_HUNTER_INVENTORY.remove(player.getUUID());
             if (saved != null) {
                 for (ItemStack stack : saved) {
-                    if (!player.getInventory().add(stack)) {
+                    if (!com.example.manhunt.util.InvUtil.safeAdd(player, stack)) {
                         player.drop(stack, false);
                     }
                 }
@@ -215,7 +215,7 @@ public final class DeathHandler {
             List<ItemStack> saved = SAVED_HUNTER_INVENTORY.remove(player.getUUID());
             if (saved != null) {
                 for (ItemStack stack : saved) {
-                    if (!player.getInventory().add(stack)) {
+                    if (!com.example.manhunt.util.InvUtil.safeAdd(player, stack)) {
                         player.drop(stack, false);
                     }
                 }

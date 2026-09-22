@@ -100,7 +100,7 @@ public final class TeamUtil {
     }
 
     private static void give(ServerPlayer p, ItemStack stack) {
-        if (!p.getInventory().add(stack)) {
+        if (!com.example.manhunt.util.InvUtil.safeAdd(p, stack)) {
             p.drop(stack, false);
         }
     }

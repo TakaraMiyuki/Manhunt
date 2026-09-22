@@ -159,6 +159,8 @@ public final class ManhuntGame {
             BossEvent.BossBarColor.GREEN, BossEvent.BossBarOverlay.PROGRESS);
         countdownBar.setProgress(1.0F);
         for (ServerPlayer p : onlineParticipants(server)) {
+            // 重置技能卡永久加成（赤鳞跃动等），避免跨局残留
+            SkillCardsBridge.resetPersistentBonuses(p);
             TeamUtil.applyBaseAttributes(p);
             TeamUtil.refreshBuffs(p);
             if (TeamUtil.isRunner(p)) {
@@ -218,6 +220,7 @@ public final class ManhuntGame {
         SkillSlotManager.reset();
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
             if (isParticipant(p.getUUID())) {
+                SkillCardsBridge.resetPersistentBonuses(p);
                 TeamUtil.resetToDefault(p);
             }
         }

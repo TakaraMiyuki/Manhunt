@@ -62,6 +62,8 @@ public final class ClientRollManager {
         List<ItemStack> items;
         boolean claimMode;
         int selected;
+        /** 已标记（中键）待领取的物品索引。 */
+        final java.util.Set<Integer> marked = new java.util.HashSet<>();
         long nextScrollSound;
         int lockedCount;
 
@@ -179,9 +181,20 @@ public final class ClientRollManager {
         return current != null && current.claimMode && !current.items.isEmpty();
     }
 
-    private static void sendClaim(int index, int action) {
+    private static void sendClaim(List<Integer> indices) {
         net.neoforged.neoforge.client.network.ClientPacketDistributor.sendToServer(
-            new ClaimRewardPayload(index, action));
+            new ClaimRewardPayload(indices));
+    }
+
+    /** 中键/回车：标记或取消标记当前选中物品。 */
+    private static void toggleMark(Session roll) {
+        if (roll.marked.contains(roll.selected)) {
+            roll.marked.remove(roll.selected);
+            uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.0F, 0.25F);
+        } else {
+            roll.marked.add(roll.selected);
+            uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.4F, 0.3F);
+        }
     }
 
     /** 滚轮选择。返回 true 表示已消费。 */
@@ -209,15 +222,17 @@ public final class ClientRollManager {
             return false;
         }
         if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
-            // 右键：领取选中项并退出选择阶段（丢弃未选中物品）
-            sendClaim(current.selected, ClaimRewardPayload.ACTION_CLAIM_AND_EXIT);
+            // 右键：领取全部标记物品并关闭界面（未标记则领取当前选中项）
+            List<Integer> claim = current.marked.isEmpty()
+                ? List.of(current.selected)
+                : new ArrayList<>(current.marked);
+            sendClaim(claim);
             current = null;
             return true;
         }
         if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE) {
-            // 中键：领取选中项
-            sendClaim(current.selected, ClaimRewardPayload.ACTION_CLAIM_ONE);
-            uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.2F, 0.25F);
+            // 中键：标记/取消标记当前选中物品
+            toggleMark(current);
             return true;
         }
         return false;
@@ -230,7 +245,7 @@ public final class ClientRollManager {
         }
         Minecraft mc = Minecraft.getInstance();
         if (key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER) {
-            // 回车：确认领取；若回车刚打开了聊天栏则关掉
+            // 回车：标记/取消标记当前选中物品；若回车刚打开了聊天栏则关掉
             if (mc.gui.screen() != null) {
                 if (mc.gui.screen() instanceof ChatScreen) {
                     mc.gui.setScreen(null);
@@ -238,8 +253,7 @@ public final class ClientRollManager {
                     return false; // 其他界面（指令输入等）不接管
                 }
             }
-            sendClaim(current.selected, ClaimRewardPayload.ACTION_CLAIM_ONE);
-            uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.2F, 0.25F);
+            toggleMark(current);
             return true;
         }
         if (mc.gui.screen() != null) {
@@ -315,14 +329,22 @@ public final class ClientRollManager {
             int sx = x0 + pad + i * (icon + gap);
             g.fill(sx - 1, barY - 1, sx + icon + 1, barY + icon + 1, withAlpha(0xFF1E1E1E, alpha));
             if (roll.claimMode) {
-                // 领取模式：选中高亮，未选中微暗
+                // 已标记：金色常驻边框；选中：白色细框游标；其余：微暗
+                if (roll.marked.contains(i)) {
+                    int mark = withAlpha(0xFFFFC844, alpha);
+                    g.fill(sx - 2, barY - 2, sx + icon + 2, barY - 1, mark);
+                    g.fill(sx - 2, barY + icon + 1, sx + icon + 2, barY + icon + 2, mark);
+                    g.fill(sx - 2, barY - 1, sx - 1, barY + icon + 1, mark);
+                    g.fill(sx + icon + 1, barY - 1, sx + icon + 2, barY + icon + 1, mark);
+                }
                 if (i == roll.selected) {
                     int glow = withAlpha(mixAlpha(0xFFFFFF00, pulse), alpha);
-                    g.fill(sx - 2, barY - 2, sx + icon + 2, barY - 1, glow);
-                    g.fill(sx - 2, barY + icon + 1, sx + icon + 2, barY + icon + 2, glow);
-                    g.fill(sx - 2, barY - 1, sx - 1, barY + icon + 1, glow);
-                    g.fill(sx + icon + 1, barY - 1, sx + icon + 2, barY + icon + 1, glow);
-                } else {
+                    g.fill(sx - 1, barY - 1, sx + icon + 1, barY, glow);
+                    g.fill(sx - 1, barY + icon, sx + icon + 1, barY + icon + 1, glow);
+                    g.fill(sx - 1, barY, sx, barY + icon, glow);
+                    g.fill(sx + icon, barY, sx + icon + 1, barY + icon, glow);
+                }
+                if (!roll.marked.contains(i) && i != roll.selected) {
                     g.fill(sx, barY, sx + icon, barY + icon, withAlpha(0x50000000, alpha));
                 }
                 g.item(roll.items.get(i), sx, barY);
@@ -347,7 +369,7 @@ public final class ClientRollManager {
             g.text(mc.font, label, labelX, barY + icon + 4, withAlpha(0xFFFFF0C0, alpha), true);
 
             // 操作提示：仅滚轮/中键/右键，小字号
-            String hint = "§f滚轮 选择   §f中键 领取   §f右键 领取并退出";
+            String hint = "§f滚轮 选择   §f中键 标记   §f右键 领取标记";
             float hintScale = 0.75F;
             int hintW = mc.font.width(hint);
             int hintX = (int) ((g.guiWidth() - hintW * hintScale) / 2);
