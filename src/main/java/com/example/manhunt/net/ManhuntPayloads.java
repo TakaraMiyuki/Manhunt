@@ -17,12 +17,12 @@ public final class ManhuntPayloads {
         PayloadRegistrar registrar = event.registrar("1");
         // 仅注册编解码；客户端 handler 由 RegisterClientPayloadHandlersEvent 接管
         registrar.playToClient(LootRollPayload.TYPE, LootRollPayload.STREAM_CODEC);
-        // 领取抽奖奖励：index=-1 收取全部
+        // 领取抽奖奖励：action=0 领取单项保留其余；action=1 领取选中并退出（丢弃未选中）
         registrar.playToServer(ClaimRewardPayload.TYPE, ClaimRewardPayload.STREAM_CODEC,
             (payload, ctx) -> {
                 if (ctx.player() instanceof net.minecraft.server.level.ServerPlayer player) {
-                    if (payload.index() == ClaimRewardPayload.CLAIM_ALL) {
-                        PendingRewardManager.claimAll(player);
+                    if (payload.action() == ClaimRewardPayload.ACTION_CLAIM_AND_EXIT) {
+                        PendingRewardManager.claimAndExit(player, payload.index());
                     } else {
                         PendingRewardManager.claimOne(player, payload.index());
                     }

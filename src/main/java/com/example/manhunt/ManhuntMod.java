@@ -91,7 +91,7 @@ public final class ManhuntMod {
         DeathHandler.onLoggedOut(uuid);
         com.example.manhunt.cards.SkillSlotManager.onLoggedOut(uuid);
         if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player) {
-            PendingRewardManager.autoClaimExisting(player);
+            PendingRewardManager.depositExisting(player);
         }
     }
 

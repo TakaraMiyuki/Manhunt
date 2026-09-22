@@ -14,9 +14,9 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.item.ItemStack;
 
 /**
- * 抽奖奖励待领取仓库：抽奖结果不再直接入包，而是停留在客户端抽奖 UI 上，
- * 玩家滚轮选择、中键逐个领取、右键一键收取全部。
- * 触发下一次抽奖时若有未领取奖励，自动全部入包（强制放弃选择流程）。
+ * 抽奖奖励待领取仓库：抽奖结果停留在客户端抽奖 UI 上，
+ * 滚轮选择、中键逐个领取、右键领取选中项并退出（丢弃未选中物品）。
+ * 触发下一次抽奖时若有未领取奖励，视为放弃（直接丢弃，不发放）。
  */
 public final class PendingRewardManager {
     private PendingRewardManager() {}
@@ -25,24 +25,23 @@ public final class PendingRewardManager {
 
     private static final Map<UUID, Pending> PENDING = new HashMap<>();
 
-    /** 开启一轮新的待领取（若上一轮未领完则自动入包）。 */
+    /** 开启一轮新的待领取（若上一轮未领取完则视为放弃）。 */
     public static void start(ServerPlayer player, int type, List<ItemStack> items) {
         if (items.isEmpty()) {
             return;
         }
-        autoClaimExisting(player);
+        discardExisting(player);
         PENDING.put(player.getUUID(), new Pending(type, new ArrayList<>(items)));
         send(player, new LootRollPayload(type, items, accentOf(type), LootRollPayload.MODE_NEW));
     }
 
-    /** 领取选中的一项（C2S 请求）。 */
+    /** 领取选中的一项，其余保留（中键/回车）。 */
     public static void claimOne(ServerPlayer player, int index) {
         Pending pending = PENDING.get(player.getUUID());
         if (pending == null || index < 0 || index >= pending.remaining().size()) {
             return;
         }
-        ItemStack stack = pending.remaining().remove(index);
-        give(player, stack);
+        give(player, pending.remaining().remove(index));
         player.playSound(net.minecraft.sounds.SoundEvents.EXPERIENCE_ORB_PICKUP, 0.5F, 1.3F);
         if (pending.remaining().isEmpty()) {
             PENDING.remove(player.getUUID());
@@ -50,20 +49,26 @@ public final class PendingRewardManager {
         sendRefresh(player, pending);
     }
 
-    /** 收取全部剩余（右键退出 / 主动请求）。 */
-    public static void claimAll(ServerPlayer player) {
+    /** 领取选中的一项并退出选择阶段，丢弃未选中的物品（右键）。 */
+    public static void claimAndExit(ServerPlayer player, int index) {
         Pending pending = PENDING.remove(player.getUUID());
-        if (pending == null) {
+        if (pending == null || index < 0 || index >= pending.remaining().size()) {
             return;
         }
-        for (ItemStack stack : pending.remaining()) {
-            give(player, stack);
-        }
+        give(player, pending.remaining().get(index));
         player.playSound(net.minecraft.sounds.SoundEvents.EXPERIENCE_ORB_PICKUP, 0.5F, 1.0F);
     }
 
-    /** 新一轮抽奖前/掉线时：把未领取奖励直接入包。 */
-    public static void autoClaimExisting(ServerPlayer player) {
+    /** 新一轮抽奖前：上一轮未领取的奖励视为放弃（不发放）。 */
+    public static void discardExisting(ServerPlayer player) {
+        Pending pending = PENDING.remove(player.getUUID());
+        if (pending != null) {
+            player.sendSystemMessage(Component.literal("§7[猎人游戏] 上一轮抽奖的未领取奖励已放弃。"), true);
+        }
+    }
+
+    /** 掉线补偿：未领取奖励直接入包（掉线非玩家主动选择）。 */
+    public static void depositExisting(ServerPlayer player) {
         Pending pending = PENDING.remove(player.getUUID());
         if (pending == null) {
             return;
@@ -71,7 +76,6 @@ public final class PendingRewardManager {
         for (ItemStack stack : pending.remaining()) {
             give(player, stack);
         }
-        player.sendSystemMessage(Component.literal("§7[猎人游戏] 上一轮抽奖奖励已自动放入背包。"));
     }
 
     /** 逃生者淘汰：奖励作废（不入包）。 */

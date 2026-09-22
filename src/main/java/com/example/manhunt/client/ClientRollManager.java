@@ -179,8 +179,9 @@ public final class ClientRollManager {
         return current != null && current.claimMode && !current.items.isEmpty();
     }
 
-    private static void sendClaim(int index) {
-        net.neoforged.neoforge.client.network.ClientPacketDistributor.sendToServer(new ClaimRewardPayload(index));
+    private static void sendClaim(int index, int action) {
+        net.neoforged.neoforge.client.network.ClientPacketDistributor.sendToServer(
+            new ClaimRewardPayload(index, action));
     }
 
     /** 滚轮选择。返回 true 表示已消费。 */
@@ -208,14 +209,14 @@ public final class ClientRollManager {
             return false;
         }
         if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
-            // 右键：退出并收取全部
-            sendClaim(ClaimRewardPayload.CLAIM_ALL);
+            // 右键：领取选中项并退出选择阶段（丢弃未选中物品）
+            sendClaim(current.selected, ClaimRewardPayload.ACTION_CLAIM_AND_EXIT);
             current = null;
             return true;
         }
         if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE) {
             // 中键：领取选中项
-            sendClaim(current.selected);
+            sendClaim(current.selected, ClaimRewardPayload.ACTION_CLAIM_ONE);
             uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.2F, 0.25F);
             return true;
         }
@@ -237,7 +238,7 @@ public final class ClientRollManager {
                     return false; // 其他界面（指令输入等）不接管
                 }
             }
-            sendClaim(current.selected);
+            sendClaim(current.selected, ClaimRewardPayload.ACTION_CLAIM_ONE);
             uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.2F, 0.25F);
             return true;
         }
@@ -340,11 +341,23 @@ public final class ClientRollManager {
         }
 
         if (roll.claimMode) {
-            String hint = "§f滚轮/←→ 选择   §f中键/回车 领取   §f右键 全部收取";
-            int hintX = (g.guiWidth() - mc.font.width(Component.literal(hint))) / 2;
-            g.text(mc.font, hint, hintX, barY + icon + 4, withAlpha(0xFFD0D0D0, alpha), true);
+            // 选中物品名称（附魔书附上附魔信息便于区分，复数物品显示数量）
+            Component label = selectionLabel(roll.items.get(roll.selected));
+            int labelX = (g.guiWidth() - mc.font.width(label)) / 2;
+            g.text(mc.font, label, labelX, barY + icon + 4, withAlpha(0xFFFFF0C0, alpha), true);
+
+            // 操作提示：仅滚轮/中键/右键，小字号
+            String hint = "§f滚轮 选择   §f中键 领取   §f右键 领取并退出";
+            float hintScale = 0.75F;
+            int hintW = mc.font.width(hint);
+            int hintX = (int) ((g.guiWidth() - hintW * hintScale) / 2);
+            g.pose().pushMatrix();
+            g.pose().translate(hintX, barY + icon + 14);
+            g.pose().scale(hintScale, hintScale);
+            g.text(mc.font, hint, 0, 0, withAlpha(0xFFB8B8B8, alpha), true);
+            g.pose().popMatrix();
         }
-        return y + icon + (roll.claimMode ? 22 : 16);
+        return y + icon + (roll.claimMode ? 30 : 16);
     }
 
     private static void renderCard(GuiGraphicsExtractor g, Minecraft mc, Session roll, double elapsed, int y) {
@@ -371,6 +384,31 @@ public final class ClientRollManager {
         g.pose().scale(scaleX, 1.0F);
         g.item(card, -8, -8);
         g.pose().popMatrix();
+    }
+
+    /** 选中物品的展示名称：附魔书附附魔信息，复数物品显示数量。 */
+    private static Component selectionLabel(ItemStack stack) {
+        var stored = stack.get(net.minecraft.core.component.DataComponents.STORED_ENCHANTMENTS);
+        Component label;
+        if (stored != null && !stored.isEmpty() && stack.is(net.minecraft.world.item.Items.ENCHANTED_BOOK)) {
+            StringBuilder sb = new StringBuilder("§e附魔书 §7(");
+            boolean first = true;
+            for (net.minecraft.core.Holder<net.minecraft.world.item.enchantment.Enchantment> holder : stored.keySet()) {
+                if (!first) {
+                    sb.append("、");
+                }
+                first = false;
+                sb.append(holder.value().description().getString()).append(" ").append(stored.getLevel(holder));
+            }
+            sb.append("§r§e)");
+            label = Component.literal(sb.toString());
+        } else {
+            label = stack.getHoverName().copy();
+        }
+        if (stack.getCount() > 1) {
+            label = label.copy().append("§r§e ×" + stack.getCount());
+        }
+        return label;
     }
 
     // ==================== 工具 ====================
