@@ -1,15 +1,16 @@
 package com.example.manhunt.client;
 
 import java.util.ArrayList;
-import java.util.Iterator;
 import java.util.List;
 
 import com.example.manhunt.GameConfig;
+import com.example.manhunt.net.ClaimRewardPayload;
 import com.example.manhunt.net.LootRollPayload;
 
 import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.ChatScreen;
 import net.minecraft.client.resources.sounds.SimpleSoundInstance;
 import net.minecraft.network.chat.Component;
 import net.minecraft.sounds.SoundEvents;
@@ -17,9 +18,12 @@ import net.minecraft.util.Mth;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.item.ItemStack;
 
+import org.lwjgl.glfw.GLFW;
+
 /**
- * 客户端抽奖动画管理：老虎机式滚动物品，依次定格，不阻挡视野与操作。
- * 动画分为：淡入(12t) → 滚动 → 各槽依次定格(缓动+定格音) → 淡出(8t)。
+ * 客户端抽奖 UI：老虎机动画 → 领取模式。
+ * 领取模式：滚轮/←→ 选择，中键/回车 领取选中项，右键 一键收取全部；
+ * 面板停留在屏幕上方（下移避让 bossbar），不阻挡视野与操作。
  */
 public final class ClientRollManager {
     private ClientRollManager() {}
@@ -48,16 +52,20 @@ public final class ClientRollManager {
     private static final int DURATION = GameConfig.ROLL_ANIMATION_TICKS;
     private static final int LOCK_STEP = 6;
     private static final int LAST_LOCK_MARGIN = 8;
+    /** 全部定格后进入领取模式的延迟（刻）。 */
+    private static final int CLAIM_DELAY = 10;
 
-    static final class ActiveRoll {
+    static final class Session {
         final int type;
-        final List<ItemStack> items;
         final int accentColor;
         final long startTick;
+        List<ItemStack> items;
+        boolean claimMode;
+        int selected;
         long nextScrollSound;
         int lockedCount;
 
-        ActiveRoll(int type, List<ItemStack> items, int accentColor, long startTick) {
+        Session(int type, List<ItemStack> items, int accentColor, long startTick) {
             this.type = type;
             this.items = items;
             this.accentColor = accentColor;
@@ -75,58 +83,87 @@ public final class ClientRollManager {
             int firstLock = lastLock - (slotCount() - 1) * LOCK_STEP;
             return startTick + Math.min(firstLock + i * LOCK_STEP, lastLock);
         }
+
+        long claimStartTime() {
+            return slotCount() > 0 ? lockTime(slotCount() - 1) + CLAIM_DELAY : Long.MAX_VALUE;
+        }
     }
 
-    private static final List<ActiveRoll> ACTIVE = new ArrayList<>();
+    /** 主会话：资源/超级抽奖（动画 → 领取）。 */
+    private static Session current;
+    /** 技能卡动画队列（单卡翻转，自动结束，无领取交互）。 */
+    private static final List<Session> cardQueue = new ArrayList<>();
     private static final RandomSource RNG = RandomSource.create();
 
     // ==================== 生命周期 ====================
 
     public static void start(LootRollPayload payload) {
         Minecraft mc = Minecraft.getInstance();
-        if (mc.level == null || payload.items().isEmpty()) {
+        if (mc.level == null) {
             return;
         }
-        ACTIVE.add(new ActiveRoll(payload.rollType(), new ArrayList<>(payload.items()),
-            payload.accentColor(), mc.level.getGameTime()));
+        if (payload.mode() == LootRollPayload.MODE_REFRESH) {
+            // 领取刷新：原位更新剩余物品；空列表关闭会话
+            if (current != null) {
+                if (payload.items().isEmpty()) {
+                    current = null;
+                } else {
+                    current.items = new ArrayList<>(payload.items());
+                    current.claimMode = true;
+                    current.selected = Mth.clamp(current.selected, 0, current.items.size() - 1);
+                }
+            }
+            return;
+        }
+        if (payload.items().isEmpty()) {
+            return;
+        }
+        if (payload.rollType() == LootRollPayload.TYPE_CARD) {
+            cardQueue.add(new Session(payload.rollType(), new ArrayList<>(payload.items()),
+                payload.accentColor(), mc.level.getGameTime()));
+            uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.35F, 0.35F);
+            return;
+        }
+        current = new Session(payload.rollType(), new ArrayList<>(payload.items()),
+            payload.accentColor(), mc.level.getGameTime());
         uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.35F, 0.35F);
     }
 
-    /** 客户端 tick：推进音效节点、清理过期动画。 */
+    /** 客户端 tick：推进音效节点、领取模式切换、清理过期动画。 */
     public static void tick() {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) {
-            ACTIVE.clear();
+            current = null;
+            cardQueue.clear();
             return;
         }
         long now = mc.level.getGameTime();
-        Iterator<ActiveRoll> it = ACTIVE.iterator();
-        while (it.hasNext()) {
-            ActiveRoll roll = it.next();
-            long elapsed = now - roll.startTick;
-            if (elapsed > DURATION) {
-                it.remove();
-                continue;
-            }
-            // 滚动 tick 音
-            while (elapsed >= 0 && roll.nextScrollSound <= now && roll.nextScrollSound < firstLockTime(roll)) {
-                uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.5F + RNG.nextFloat() * 0.6F, 0.18F);
-                roll.nextScrollSound = Math.max(now, roll.nextScrollSound) + 3 + RNG.nextInt(2);
-            }
-            // 定格音（按已定格数触发）
-            while (roll.lockedCount < roll.slotCount() && now >= roll.lockTime(roll.lockedCount)) {
-                float pitch = lockPitch(roll, roll.lockedCount);
-                uiSound(SoundEvents.EXPERIENCE_ORB_PICKUP, pitch, 0.35F);
-                roll.lockedCount++;
-            }
+        if (current != null) {
+            advance(now, current);
+        }
+        cardQueue.removeIf(card -> now - card.startTick > DURATION);
+    }
+
+    private static void advance(long now, Session roll) {
+        // 滚动 tick 音
+        long firstLock = roll.slotCount() > 0 ? roll.lockTime(0) : Long.MAX_VALUE;
+        while (roll.nextScrollSound <= now && roll.nextScrollSound < firstLock) {
+            uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.5F + RNG.nextFloat() * 0.6F, 0.18F);
+            roll.nextScrollSound = Math.max(now, roll.nextScrollSound) + 3 + RNG.nextInt(2);
+        }
+        // 定格音（按已定格数触发）
+        while (roll.lockedCount < roll.slotCount() && now >= roll.lockTime(roll.lockedCount)) {
+            uiSound(SoundEvents.EXPERIENCE_ORB_PICKUP, lockPitch(roll, roll.lockedCount), 0.35F);
+            roll.lockedCount++;
+        }
+        // 全部定格 → 领取模式
+        if (!roll.claimMode && now >= roll.claimStartTime()) {
+            roll.claimMode = true;
+            uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 0.8F, 0.3F);
         }
     }
 
-    private static long firstLockTime(ActiveRoll roll) {
-        return roll.slotCount() > 0 ? roll.lockTime(0) : Long.MAX_VALUE;
-    }
-
-    private static float lockPitch(ActiveRoll roll, int index) {
+    private static float lockPitch(Session roll, int index) {
         if (roll.type == LootRollPayload.TYPE_CARD) {
             return 0.9F + 0.25F * index;
         }
@@ -136,13 +173,94 @@ public final class ClientRollManager {
         return 1.0F + 0.12F * index;
     }
 
+    // ==================== 输入（领取模式） ====================
+
+    public static boolean hasClaimSession() {
+        return current != null && current.claimMode && !current.items.isEmpty();
+    }
+
+    private static void sendClaim(int index) {
+        net.neoforged.neoforge.client.network.ClientPacketDistributor.sendToServer(new ClaimRewardPayload(index));
+    }
+
+    /** 滚轮选择。返回 true 表示已消费。 */
+    public static boolean onMouseScroll(double deltaY) {
+        if (!hasClaimSession()) {
+            return false;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.gui.screen() != null || current.items.isEmpty()) {
+            return false;
+        }
+        int dir = deltaY < 0 ? 1 : -1;
+        current.selected = Math.floorMod(current.selected + dir, current.items.size());
+        uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.8F, 0.15F);
+        return true;
+    }
+
+    /** 鼠标按键。返回 true 表示已消费。 */
+    public static boolean onMouseButton(int button, int action) {
+        if (!hasClaimSession() || action != GLFW.GLFW_PRESS) {
+            return false;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.gui.screen() != null) {
+            return false;
+        }
+        if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
+            // 右键：退出并收取全部
+            sendClaim(ClaimRewardPayload.CLAIM_ALL);
+            current = null;
+            return true;
+        }
+        if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE) {
+            // 中键：领取选中项
+            sendClaim(current.selected);
+            uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.2F, 0.25F);
+            return true;
+        }
+        return false;
+    }
+
+    /** 键盘按键（在原版处理后调用）。返回 true 表示已消费。 */
+    public static boolean onKey(int key, int action) {
+        if (!hasClaimSession() || action != GLFW.GLFW_PRESS) {
+            return false;
+        }
+        Minecraft mc = Minecraft.getInstance();
+        if (key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER) {
+            // 回车：确认领取；若回车刚打开了聊天栏则关掉
+            if (mc.gui.screen() != null) {
+                if (mc.gui.screen() instanceof ChatScreen) {
+                    mc.gui.setScreen(null);
+                } else {
+                    return false; // 其他界面（指令输入等）不接管
+                }
+            }
+            sendClaim(current.selected);
+            uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.2F, 0.25F);
+            return true;
+        }
+        if (mc.gui.screen() != null) {
+            return false;
+        }
+        if (key == GLFW.GLFW_KEY_LEFT) {
+            current.selected = Math.floorMod(current.selected - 1, current.items.size());
+            uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.8F, 0.15F);
+            return true;
+        }
+        if (key == GLFW.GLFW_KEY_RIGHT) {
+            current.selected = Math.floorMod(current.selected + 1, current.items.size());
+            uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.8F, 0.15F);
+            return true;
+        }
+        return false;
+    }
+
     // ==================== 渲染 ====================
 
     /** HUD 层渲染入口（GuiLayer）。 */
     public static void render(GuiGraphicsExtractor g, DeltaTracker delta) {
-        if (ACTIVE.isEmpty()) {
-            return;
-        }
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null || mc.gui.hud.isHidden()) {
             return;
@@ -150,23 +268,27 @@ public final class ClientRollManager {
         float partial = delta.getGameTimeDeltaPartialTick(false);
         long now = mc.level.getGameTime();
         double nowD = now + partial;
-        int stackY = 10;
-        for (ActiveRoll roll : ACTIVE) {
-            double elapsed = nowD - roll.startTick;
-            if (elapsed < 0 || elapsed > DURATION) {
-                continue;
+        int y = GameConfig.ROLL_UI_TOP_OFFSET;
+        if (current != null) {
+            double elapsed = nowD - current.startTick;
+            if (elapsed >= 0 && (elapsed <= DURATION + 1 || current.claimMode)) {
+                y = renderRoll(g, mc, current, elapsed, y);
+            } else {
+                current = null; // 未领取但动画已结束且未进入领取模式的兜底
             }
-            stackY = renderRoll(g, mc, roll, elapsed, stackY);
+        }
+        for (Session card : cardQueue) {
+            double elapsed = nowD - card.startTick;
+            if (elapsed >= 0 && elapsed <= DURATION) {
+                renderCard(g, mc, card, elapsed, y);
+            }
         }
     }
 
-    private static int renderRoll(GuiGraphicsExtractor g, Minecraft mc, ActiveRoll roll, double elapsed, int y) {
-        float alpha = fadeInOut(elapsed);
+    private static int renderRoll(GuiGraphicsExtractor g, Minecraft mc, Session roll, double elapsed, int y) {
+        float alpha = roll.claimMode ? 1.0F : fadeInOut(elapsed);
         if (alpha <= 0.01F) {
             return y;
-        }
-        if (roll.type == LootRollPayload.TYPE_CARD) {
-            return renderCard(g, mc, roll, elapsed, y, alpha);
         }
         int slots = roll.slotCount();
         int icon = 16;
@@ -176,7 +298,6 @@ public final class ClientRollManager {
         int x0 = (g.guiWidth() - width) / 2;
         int barY = y + 10;
 
-        // 面板与边框
         int border = withAlpha(roll.accentColor != 0 ? roll.accentColor : 0xFF8B8B8B, alpha);
         g.fillGradient(x0 - 1, barY - 1, x0 + width + 1, barY + icon + 1,
             withAlpha(0xB4000000, alpha), withAlpha(0xB4000000, alpha));
@@ -185,18 +306,29 @@ public final class ClientRollManager {
         g.fill(x0 - 2, barY - 1, x0 - 1, barY + icon + 1, border);
         g.fill(x0 + width + 1, barY - 1, x0 + width + 2, barY + icon + 1, border);
 
-        // 标题
         String title = roll.type == LootRollPayload.TYPE_SUPER ? "超级抽奖" : "资源抽奖";
         int textX = (g.guiWidth() - mc.font.width(title)) / 2;
         g.text(mc.font, title, textX, barY - 9, withAlpha(0xFFE8C844, alpha), true);
 
+        float pulse = 0.6F + 0.4F * (float) Math.abs(Math.sin(elapsed * 0.3));
         for (int i = 0; i < slots; i++) {
             int sx = x0 + pad + i * (icon + gap);
             g.fill(sx - 1, barY - 1, sx + icon + 1, barY + icon + 1, withAlpha(0xFF1E1E1E, alpha));
-            long lockAt = roll.lockTime(i);
-            if (elapsed >= lockAt - roll.startTick) {
+            if (roll.claimMode) {
+                // 领取模式：选中高亮，未选中微暗
+                if (i == roll.selected) {
+                    int glow = withAlpha(mixAlpha(0xFFFFFF00, pulse), alpha);
+                    g.fill(sx - 2, barY - 2, sx + icon + 2, barY - 1, glow);
+                    g.fill(sx - 2, barY + icon + 1, sx + icon + 2, barY + icon + 2, glow);
+                    g.fill(sx - 2, barY - 1, sx - 1, barY + icon + 1, glow);
+                    g.fill(sx + icon + 1, barY - 1, sx + icon + 2, barY + icon + 1, glow);
+                } else {
+                    g.fill(sx, barY, sx + icon, barY + icon, withAlpha(0x50000000, alpha));
+                }
+                g.item(roll.items.get(i), sx, barY);
+            } else if (elapsed >= roll.lockTime(i) - roll.startTick) {
                 // 已定格：缩放弹出动画
-                double since = elapsed - (lockAt - roll.startTick);
+                double since = elapsed - (roll.lockTime(i) - roll.startTick);
                 float pop = since < 6 ? (float) (1.0 + 0.3 * (1.0 - since / 6.0)) : 1.0F;
                 drawItemCentered(g, roll.items.get(i), sx + icon / 2, barY + icon / 2, pop);
             } else {
@@ -207,22 +339,29 @@ public final class ClientRollManager {
                 g.item(d, sx, barY);
             }
         }
-        return y + icon + 16;
+
+        if (roll.claimMode) {
+            String hint = "§f滚轮/←→ 选择   §f中键/回车 领取   §f右键 全部收取";
+            int hintX = (g.guiWidth() - mc.font.width(Component.literal(hint))) / 2;
+            g.text(mc.font, hint, hintX, barY + icon + 4, withAlpha(0xFFD0D0D0, alpha), true);
+        }
+        return y + icon + (roll.claimMode ? 22 : 16);
     }
 
-    private static int renderCard(GuiGraphicsExtractor g, Minecraft mc, ActiveRoll roll, double elapsed, int y, float alpha) {
+    private static void renderCard(GuiGraphicsExtractor g, Minecraft mc, Session roll, double elapsed, int y) {
+        float alpha = fadeInOut(elapsed);
+        if (alpha <= 0.01F) {
+            return;
+        }
         ItemStack card = roll.items.get(0);
         int size = 24;
         int cx = g.guiWidth() / 2;
         int cy = y + 14;
-        // 翻转进度（前 35% 时间）
         double flipT = Math.min(1.0, elapsed / (DURATION * 0.35));
         float scaleX = (float) Math.max(0.08, Math.abs(Math.cos(flipT * Math.PI))) * (flipT < 1.0 ? 1.6F : 1.0F);
-        // 定格后轻微脉冲
         float glow = flipT >= 1.0 ? 0.6F + 0.4F * (float) Math.sin(elapsed * 0.35) : 0.4F;
         int glowColor = withAlpha(mixAlpha(roll.accentColor != 0 ? roll.accentColor : 0xFFFF55FF, glow), alpha);
 
-        // 品质光晕
         g.fillGradient(cx - size / 2 - 3, cy - size / 2 - 3, cx + size / 2 + 3, cy + size / 2 + 3,
             glowColor, withAlpha(0x00000000, alpha));
         g.fillGradient(cx - size / 2 - 1, cy - size / 2 - 1, cx + size / 2 + 1, cy + size / 2 + 1,
@@ -233,7 +372,6 @@ public final class ClientRollManager {
         g.pose().scale(scaleX, 1.0F);
         g.item(card, -8, -8);
         g.pose().popMatrix();
-        return y + size + 14;
     }
 
     // ==================== 工具 ====================
@@ -270,11 +408,8 @@ public final class ClientRollManager {
         Minecraft.getInstance().getSoundManager().play(SimpleSoundInstance.forUI(sound, pitch, volume));
     }
 
-    public static boolean hasActive() {
-        return !ACTIVE.isEmpty();
-    }
-
     public static void clear() {
-        ACTIVE.clear();
+        current = null;
+        cardQueue.clear();
     }
 }

@@ -12,6 +12,8 @@ public final class GameConfig {
     // ==================== 里程与抽奖 ====================
     /** 每积累多少里程触发一次资源抽奖。 */
     public static final int MILEAGE_PER_ROLL = 200;
+    /** 里程奖池档位阈值（<1000 / <2000 / <3000 / 3000+ 共四档；3000 同时解锁要塞检查点）。 */
+    public static final int[] MILEAGE_TIERS = {1000, 2000, 3000};
     /** 每次资源抽奖抽到的物品种数。 */
     public static final int ROLL_ITEMS = 5;
     /** 超级抽奖（检查点/士气触发）一次抽到的物品种数。 */
@@ -31,8 +33,10 @@ public final class GameConfig {
     public static final int CARD_WEIGHT_RARE = 20;
     public static final int CARD_WEIGHT_BLACK = 10;
     public static final int CARD_WEIGHT_RAINBOW = 2;
-    /** 快捷栏固定技能栏位（最右 3 格，0-based）。 */
-    public static final int[] CARD_FIXED_SLOTS = {6, 7, 8};
+    /** 技能栏固定于快捷栏最右一格（0-based）。 */
+    public static final int CARD_SLOT = 8;
+    /** 技能切换最短间隔（刻），防止按住左键连续切换。 */
+    public static final int SKILL_SWITCH_COOLDOWN_TICKS = 10;
 
     // ==================== 士气 ====================
     /** 士气阈值：每达到一档，全体在线猎人各获得一次超级抽奖（1000 封顶）。 */
@@ -72,6 +76,8 @@ public final class GameConfig {
     public static final int METER_SYNC_INTERVAL_TICKS = 20;
     /** 人数档位重算间隔。 */
     public static final int TIER_RECALC_INTERVAL_TICKS = 40;
-    /** 技能卡固定栏位守护间隔。 */
+    /** 技能栏守护间隔（经验条/技能槽镜像）。 */
     public static final int CARD_SLOT_GUARD_INTERVAL_TICKS = 20;
+    /** 抽奖 UI 距屏幕顶部偏移（避让 bossbar/检查点距离显示）。 */
+    public static final int ROLL_UI_TOP_OFFSET = 40;
 }

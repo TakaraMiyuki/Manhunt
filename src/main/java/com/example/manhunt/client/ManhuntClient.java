@@ -8,11 +8,14 @@ import net.neoforged.api.distmarker.Dist;
 import net.neoforged.bus.api.SubscribeEvent;
 import net.neoforged.fml.common.EventBusSubscriber;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
+import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.network.event.RegisterClientPayloadHandlersEvent;
 
+import org.lwjgl.glfw.GLFW;
+
 /**
- * 客户端事件订阅：HUD 抽奖动画层 + S2C 动画包 handler + 动画 tick。
+ * 客户端事件订阅：HUD 抽奖层 + S2C 动画包 handler + 动画 tick + 领取模式输入。
  * （NeoForge 按 IModBusEvent 自动路由 mod 总线 / 游戏总线）
  */
 @EventBusSubscriber(modid = ManhuntMod.MODID, value = Dist.CLIENT)
@@ -34,5 +37,30 @@ public final class ManhuntClient {
     @SubscribeEvent
     public static void onClientTick(ClientTickEvent.Post event) {
         ClientRollManager.tick();
+    }
+
+    // ==================== 领取模式输入 ====================
+
+    @SubscribeEvent
+    public static void onMouseScrolling(InputEvent.MouseScrollingEvent event) {
+        if (ClientRollManager.onMouseScroll(event.getScrollDeltaY())) {
+            event.setCanceled(true);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onMouseButton(InputEvent.MouseButton.Pre event) {
+        if (ClientRollManager.onMouseButton(event.getButton(), event.getAction())) {
+            event.setCanceled(true);
+        }
+    }
+
+    @SubscribeEvent
+    public static void onKey(InputEvent.Key event) {
+        int key = event.getKey();
+        if (key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER
+                || key == GLFW.GLFW_KEY_LEFT || key == GLFW.GLFW_KEY_RIGHT) {
+            ClientRollManager.onKey(key, event.getAction());
+        }
     }
 }

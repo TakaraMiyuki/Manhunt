@@ -6,13 +6,12 @@ import java.util.List;
 import com.example.manhunt.GameConfig;
 import com.example.manhunt.net.LootRollPayload;
 
-import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.util.RandomSource;
 import net.minecraft.world.item.ItemStack;
 
 /**
- * 抽奖执行：服务端先结算并入包，再向客户端发送展示动画数据。
+ * 抽奖执行：服务端结算并进入待领取仓库，客户端播放"老虎机"动画后由玩家领取。
  */
 public final class LootRoller {
     private LootRoller() {}
@@ -23,13 +22,13 @@ public final class LootRoller {
     public static void resourceRoll(ServerPlayer player, long mileage) {
         List<RewardPools.Entry> pool = RewardPools.pool(RewardPools.tierOf(mileage));
         List<ItemStack> items = doRoll(pool, GameConfig.ROLL_ITEMS, player.registryAccess());
-        deliver(player, LootRollPayload.TYPE_RESOURCE, items, 0xFF8B8B8B);
+        PendingRewardManager.start(player, LootRollPayload.TYPE_RESOURCE, items);
     }
 
     /** 超级抽奖：不限档位全池抽 {@code GameConfig.SUPER_ROLL_ITEMS} 种。 */
     public static void superRoll(ServerPlayer player) {
         List<ItemStack> items = doRoll(RewardPools.allPools(), GameConfig.SUPER_ROLL_ITEMS, player.registryAccess());
-        deliver(player, LootRollPayload.TYPE_SUPER, items, 0xFFFFD700);
+        PendingRewardManager.start(player, LootRollPayload.TYPE_SUPER, items);
     }
 
     private static List<ItemStack> doRoll(List<RewardPools.Entry> pool, int count,
@@ -39,24 +38,8 @@ public final class LootRoller {
         }
         List<ItemStack> items = new ArrayList<>(count);
         for (int i = 0; i < count; i++) {
-            items.add(pool.get(RNG.nextInt(pool.size())).roll(registries));
+            items.add(RewardPools.weightedPick(pool).roll(registries));
         }
         return items;
-    }
-
-    private static void deliver(ServerPlayer player, int type, List<ItemStack> items, int accent) {
-        if (items.isEmpty()) {
-            return;
-        }
-        // 展示用副本：入包合并可能改变原 stack 的数量
-        List<ItemStack> display = new ArrayList<>(items.size());
-        for (ItemStack stack : items) {
-            display.add(stack.copy());
-            if (!player.getInventory().add(stack)) {
-                player.drop(stack, false);
-            }
-        }
-        CustomPacketPayload payload = new LootRollPayload(type, display, accent);
-        net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(player, payload);
     }
 }

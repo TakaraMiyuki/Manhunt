@@ -9,7 +9,8 @@ import java.util.Set;
 import java.util.UUID;
 
 import com.example.manhunt.GameConfig;
-import com.example.manhunt.cards.CardSlotManager;
+import com.example.manhunt.cards.SkillSlotManager;
+import com.example.manhunt.loot.PendingRewardManager;
 import com.example.manhunt.cards.SkillCardsBridge;
 import com.example.manhunt.game.CheckpointManager;
 import com.example.manhunt.game.ManhuntGame;
@@ -158,19 +159,6 @@ public final class ManhuntCommand {
                         return 1;
                     }))));
 
-        // ==================== 卡牌选择（所有玩家，聊天按钮） ====================
-        root.then(Commands.literal("cardchoose")
-            .then(Commands.literal("giveup").executes(ctx -> {
-                ServerPlayer p = ctx.getSource().getPlayerOrException();
-                CardSlotManager.handleChoice(p, -1);
-                return 1;
-            }))
-            .then(Commands.argument("slot", IntegerArgumentType.integer(1, 9)).executes(ctx -> {
-                ServerPlayer p = ctx.getSource().getPlayerOrException();
-                CardSlotManager.handleChoice(p, IntegerArgumentType.getInteger(ctx, "slot") - 1);
-                return 1;
-            })));
-
         // ==================== 状态（所有玩家可查） ====================
         root.then(Commands.literal("status").executes(ctx -> {
             ctx.getSource().sendSuccess(() -> Component.literal(statusText(ctx.getSource().getServer())), false);
@@ -305,7 +293,7 @@ public final class ManhuntCommand {
             ctx.getSource().sendFailure(Component.literal("§c该品级没有可用卡牌。"));
             return 0;
         }
-        CardSlotManager.giveDrawnCard(p, draw);
+        SkillSlotManager.giveDrawnCard(p, draw);
         return 1;
     }
 
@@ -347,7 +335,7 @@ public final class ManhuntCommand {
                 }
                 String role = TeamUtil.isHunter(p) ? "§c猎人" : "§a逃生者";
                 String extra = TeamUtil.isHunter(p) ? "" : " §7| 里程 §f" + MileageManager.mileage(p.getUUID());
-                String pending = CardSlotManager.hasPending(p.getUUID()) ? " §e[待选卡]" : "";
+                String pending = PendingRewardManager.hasPending(p.getUUID()) ? " §e[待选卡]" : "";
                 sb.append(role).append(" §f").append(p.getName().getString())
                     .append(p.isSpectator() ? " §7(旁观)" : "")
                     .append(extra).append(pending).append('\n');

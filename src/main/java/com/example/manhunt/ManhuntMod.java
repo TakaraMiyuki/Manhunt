@@ -3,27 +3,26 @@ package com.example.manhunt;
 import com.example.manhunt.game.CheckpointManager;
 import com.example.manhunt.game.DeathHandler;
 import com.example.manhunt.game.ManhuntGame;
-import com.example.manhunt.game.MileageManager;
-import com.example.manhunt.game.TierSystem;
 import com.example.manhunt.command.ManhuntCommand;
 import com.example.manhunt.item.CompassManager;
 import com.example.manhunt.item.ManhuntItems;
+import com.example.manhunt.loot.PendingRewardManager;
 import com.example.manhunt.net.ManhuntPayloads;
+import com.example.manhunt.recipe.EnchantBookRecipe;
 import com.mojang.logging.LogUtils;
+import net.minecraft.core.registries.Registries;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.entity.living.LivingChangeTargetEvent;
-import net.neoforged.neoforge.event.entity.living.LivingDamageEvent;
-import net.neoforged.neoforge.event.entity.living.LivingDeathEvent;
-import net.neoforged.neoforge.event.entity.living.LivingDropsEvent;
-import net.neoforged.neoforge.event.entity.living.LivingExperienceDropEvent;
-import net.neoforged.neoforge.event.entity.living.LivingIncomingDamageEvent;
+import net.neoforged.neoforge.event.entity.player.AttackEntityEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerInteractEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerXpEvent;
+import net.neoforged.neoforge.entity.XpOrbTargetingEvent;
 import net.neoforged.neoforge.event.server.ServerStartedEvent;
 import net.neoforged.neoforge.event.server.ServerStoppingEvent;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
+import net.neoforged.neoforge.registries.DeferredRegister;
 import org.slf4j.Logger;
 
 @Mod(ManhuntMod.MODID)
@@ -31,8 +30,16 @@ public final class ManhuntMod {
     public static final String MODID = "manhunt";
     public static final Logger LOGGER = LogUtils.getLogger();
 
+    /** 合成栏附魔配方序列化器。 */
+    public static final DeferredRegister<net.minecraft.world.item.crafting.RecipeSerializer<?>> RECIPE_SERIALIZERS =
+        DeferredRegister.create(Registries.RECIPE_SERIALIZER, MODID);
+    static {
+        RECIPE_SERIALIZERS.register("enchant_from_book", () -> EnchantBookRecipe.SERIALIZER);
+    }
+
     public ManhuntMod(IEventBus modEventBus) {
         ManhuntItems.ITEMS.register(modEventBus);
+        RECIPE_SERIALIZERS.register(modEventBus);
         modEventBus.addListener(ManhuntPayloads::onRegister);
 
         NeoForge.EVENT_BUS.addListener(ManhuntCommand::onRegisterCommands);
@@ -51,6 +58,19 @@ public final class ManhuntMod {
         NeoForge.EVENT_BUS.addListener(DeathHandler::onDimensionChange);
         NeoForge.EVENT_BUS.addListener(CompassManager::onRightClick);
         NeoForge.EVENT_BUS.addListener(ManhuntMod::onLoggedOut);
+        // 经验球不再跟随参与者（配合 PickupXp 取消，防止经验球环绕无法吸收）
+        NeoForge.EVENT_BUS.addListener(ManhuntMod::onXpOrbTargeting);
+        // 技能栏：左键切换（打方块/打实体双侧取消并切换，挥空由客户端发包）
+        NeoForge.EVENT_BUS.addListener(com.example.manhunt.cards.SkillSlotManager::onLeftClickBlock);
+        NeoForge.EVENT_BUS.addListener(com.example.manhunt.cards.SkillSlotManager::onAttackEntity);
+        NeoForge.EVENT_BUS.addListener(com.example.manhunt.cards.SkillSlotManager::onLeftClickEmpty);
+    }
+
+    private static void onXpOrbTargeting(XpOrbTargetingEvent event) {
+        if (ManhuntGame.isRunning() && event.getFollowingPlayer() != null
+                && ManhuntGame.isParticipant(event.getFollowingPlayer().getUUID())) {
+            event.setFollowingPlayer(null);
+        }
     }
 
     private static void onServerStarted(ServerStartedEvent event) {
@@ -66,14 +86,22 @@ public final class ManhuntMod {
     }
 
     private static void onLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
-        MileageManager.onLoggedOut(event.getEntity().getUUID());
-        DeathHandler.onLoggedOut(event.getEntity().getUUID());
-        com.example.manhunt.cards.CardSlotManager.onLoggedOut(event.getEntity().getUUID());
+        var uuid = event.getEntity().getUUID();
+        MileageManager_onLoggedOut(uuid);
+        DeathHandler.onLoggedOut(uuid);
+        com.example.manhunt.cards.SkillSlotManager.onLoggedOut(uuid);
+        if (event.getEntity() instanceof net.minecraft.server.level.ServerPlayer player) {
+            PendingRewardManager.autoClaimExisting(player);
+        }
+    }
+
+    private static void MileageManager_onLoggedOut(java.util.UUID id) {
+        com.example.manhunt.game.MileageManager.onLoggedOut(id);
     }
 
     /**
      * 无玩家冒烟测试（环境变量 MANHUNT_SMOKETEST=1 时启用）：
-     * 验证检查点生成、要塞定位、奖池抽取、技能卡桥接与档位计算。
+     * 验证检查点生成、奖池抽取、整包网络编码、技能卡桥接、附魔配方与档位计算。
      */
     private static void runSmokeTest(net.minecraft.server.MinecraftServer server) {
         try {
@@ -83,22 +111,36 @@ public final class ManhuntMod {
                 cp == null ? "未生成" : cp.getX() + ", " + cp.getY() + ", " + cp.getZ());
 
             // 奖池：每个档位抽多件验证无异常，并对整包做真实网络编码验证
-            // （附魔书 Holder 必须来自活动注册表，否则发送时 Failed to encode → 连接丢失）
             var registryAccess = server.overworld().registryAccess();
             var rng = net.minecraft.util.RandomSource.create();
-            for (int tier = 0; tier < 5; tier++) {
+            for (int tier = 0; tier <= com.example.manhunt.GameConfig.MILEAGE_TIERS.length; tier++) {
                 var pool = com.example.manhunt.loot.RewardPools.pool(tier);
                 var items = new java.util.ArrayList<net.minecraft.world.item.ItemStack>();
                 for (int i = 0; i < 20 && !pool.isEmpty(); i++) {
-                    items.add(pool.get(rng.nextInt(pool.size())).roll(registryAccess));
+                    items.add(com.example.manhunt.loot.RewardPools.weightedPick(pool).roll(registryAccess));
                 }
                 encodeVerify(items, registryAccess);
                 LOGGER.info("[Manhunt][冒烟测试] 奖池档位 {} 共 {} 种条目，抽样+编码通过", tier + 1, pool.size());
             }
             // 随机附魔书（重点验证：数据包注册表 Holder 的网络编码）
-            var book = com.example.manhunt.loot.RewardPools.randomBook(registryAccess, 3);
-            encodeVerify(java.util.List.of(book), registryAccess);
-            LOGGER.info("[Manhunt][冒烟测试] 随机附魔书 {} 网络编码通过", book.getItem());
+            var book = com.example.manhunt.loot.RewardPools.randomBook(registryAccess, 3, false);
+            var advBook = com.example.manhunt.loot.RewardPools.randomBook(registryAccess, 255, true);
+            encodeVerify(java.util.List.of(book, advBook), registryAccess);
+            LOGGER.info("[Manhunt][冒烟测试] 随机附魔书 {} / 高级附魔书 {} 编码通过",
+                book.getItem(), advBook.getItem());
+
+            // 合成栏附魔配方：附魔书 + 剑 → 附魔剑
+            var sword = new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.IRON_SWORD);
+            var input = net.minecraft.world.item.crafting.CraftingInput.of(2, 1,
+                java.util.List.of(sword, book));
+            var recipe = EnchantBookRecipe.INSTANCE;
+            boolean matched = recipe.matches(input, server.overworld());
+            var result = recipe.assemble(input);
+            LOGGER.info("[Manhunt][冒烟测试] 合成栏附魔: matches={} 结果={}", matched,
+                matched ? result.getItem() + " 附魔数=" + result.getEnchantments().keySet().size() : "无");
+            if (!matched || result.getEnchantments().keySet().size() != 1) {
+                throw new IllegalStateException("合成栏附魔配方验证失败");
+            }
 
             // 技能卡桥接
             LOGGER.info("[Manhunt][冒烟测试] 技能卡模组可用: {}",
@@ -125,12 +167,9 @@ public final class ManhuntMod {
             }
 
             // 档位
-            TierSystem.recalculate(server);
-            LOGGER.info("[Manhunt][冒烟测试] 当前档位: {}", TierSystem.displayTier());
-
-            // 要塞定位
-            var stronghold = com.example.manhunt.game.CheckpointManager.surfaceY(server.overworld(), 0, 0);
-            LOGGER.info("[Manhunt][冒烟测试] surfaceY(0,0) = {}", stronghold);
+            com.example.manhunt.game.TierSystem.recalculate(server);
+            LOGGER.info("[Manhunt][冒烟测试] 当前档位: {}",
+                com.example.manhunt.game.TierSystem.displayTier());
         } catch (Exception e) {
             LOGGER.error("[Manhunt][冒烟测试] 失败", e);
         }
@@ -142,7 +181,8 @@ public final class ManhuntMod {
         var buf = new net.minecraft.network.RegistryFriendlyByteBuf(
             io.netty.buffer.Unpooled.buffer(), registryAccess);
         var payload = new com.example.manhunt.net.LootRollPayload(
-            com.example.manhunt.net.LootRollPayload.TYPE_SUPER, items, 0);
+            com.example.manhunt.net.LootRollPayload.TYPE_SUPER, items, 0,
+            com.example.manhunt.net.LootRollPayload.MODE_NEW);
         com.example.manhunt.net.LootRollPayload.STREAM_CODEC.encode(buf, payload);
         if (buf.readableBytes() <= 0) {
             throw new IllegalStateException("payload 编码后为空");

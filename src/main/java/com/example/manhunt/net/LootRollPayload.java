@@ -10,16 +10,20 @@ import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 
 /**
- * S2C：抽奖展示动画数据。物品已在服务端入包，此包只驱动客户端"老虎机"动画。
+ * S2C：抽奖展示数据。
  *
  * @param rollType    0=资源抽奖(5格) 1=超级抽奖(7格) 2=技能卡(单卡翻转, items[0] 为卡)
- * @param items       展示/实际发放的物品
- * @param accentColor 强调色（ARGB）：资源/超级抽奖用边框色，技能卡为品级色
+ * @param items       展示物品（资源/超级抽奖为待领取奖励）
+ * @param accentColor 强调色（ARGB）：边框/品级色
+ * @param mode        0=新抽奖（重置领取会话） 1=领取刷新（原位更新剩余物品，空列表=关闭）
  */
-public record LootRollPayload(int rollType, List<ItemStack> items, int accentColor) implements CustomPacketPayload {
+public record LootRollPayload(int rollType, List<ItemStack> items, int accentColor, int mode)
+    implements CustomPacketPayload {
     public static final int TYPE_RESOURCE = 0;
     public static final int TYPE_SUPER = 1;
     public static final int TYPE_CARD = 2;
+    public static final int MODE_NEW = 0;
+    public static final int MODE_REFRESH = 1;
 
     public static final CustomPacketPayload.Type<LootRollPayload> TYPE =
         new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath("manhunt", "loot_roll"));
@@ -33,10 +37,12 @@ public record LootRollPayload(int rollType, List<ItemStack> items, int accentCol
             ByteBufCodecs.VAR_INT.encode(buf, payload.rollType);
             ITEM_LIST_CODEC.encode(buf, payload.items);
             ByteBufCodecs.VAR_INT.encode(buf, payload.accentColor);
+            ByteBufCodecs.VAR_INT.encode(buf, payload.mode);
         },
         buf -> new LootRollPayload(
             ByteBufCodecs.VAR_INT.decode(buf),
             ITEM_LIST_CODEC.decode(buf),
+            ByteBufCodecs.VAR_INT.decode(buf),
             ByteBufCodecs.VAR_INT.decode(buf)));
 
     @Override

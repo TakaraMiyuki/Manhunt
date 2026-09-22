@@ -51,6 +51,7 @@ public final class ManhuntStateIO {
             root.add("rollCount", intMap(MileageManager.snapshotRolls()));
             root.addProperty("morale", MoraleManager.morale());
             root.addProperty("moraleRewards", MoraleManager.rewards());
+            root.add("skills", stringMap(com.example.manhunt.cards.SkillSlotManager.snapshotIds()));
 
             Path file = path(server);
             Files.createDirectories(file.getParent());
@@ -107,6 +108,20 @@ public final class ManhuntStateIO {
             }
             MileageManager.restore(mileage, rolls);
             MoraleManager.restore(root.get("morale").getAsInt(), root.get("moraleRewards").getAsInt());
+            if (root.has("skills")) {
+                Map<UUID, java.util.List<String>> skills = new HashMap<>();
+                for (var e : root.getAsJsonObject("skills").entrySet()) {
+                    try {
+                        java.util.List<String> ids = new java.util.ArrayList<>();
+                        for (var el : e.getValue().getAsJsonArray()) {
+                            ids.add(el.getAsString());
+                        }
+                        skills.put(UUID.fromString(e.getKey()), ids);
+                    } catch (IllegalArgumentException ignored) {
+                    }
+                }
+                com.example.manhunt.cards.SkillSlotManager.restore(skills);
+            }
 
             ManhuntGame.reattachBossbars(server);
             ManhuntGame.broadcast(server, "§6[猎人游戏] §7已从存档恢复对局（已激活 " + activated + " 个检查点）。");
@@ -138,6 +153,18 @@ public final class ManhuntStateIO {
             }
         }
         return set;
+    }
+
+    private static com.google.gson.JsonObject stringMap(Map<UUID, java.util.List<String>> map) {
+        com.google.gson.JsonObject o = new com.google.gson.JsonObject();
+        for (Map.Entry<UUID, java.util.List<String>> e : map.entrySet()) {
+            com.google.gson.JsonArray arr = new com.google.gson.JsonArray();
+            for (String id : e.getValue()) {
+                arr.add(id);
+            }
+            o.add(e.getKey().toString(), arr);
+        }
+        return o;
     }
 
     private static com.google.gson.JsonObject longMap(Map<UUID, Long> map) {

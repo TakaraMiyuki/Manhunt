@@ -9,7 +9,8 @@ import java.util.Set;
 import java.util.UUID;
 
 import com.example.manhunt.GameConfig;
-import com.example.manhunt.cards.CardSlotManager;
+import com.example.manhunt.cards.SkillSlotManager;
+import com.example.manhunt.loot.PendingRewardManager;
 import com.example.manhunt.cards.SkillCardsBridge;
 import com.example.manhunt.item.CompassManager;
 import com.example.manhunt.net.LootRollPayload;
@@ -136,7 +137,7 @@ public final class ManhuntGame {
         forceNextStronghold = false;
         MileageManager.reset();
         MoraleManager.reset();
-        CardSlotManager.reset();
+        SkillSlotManager.reset();
         TierSystem.reset();
 
         CheckpointManager.generateFirst(server);
@@ -196,6 +197,7 @@ public final class ManhuntGame {
     }
 
     private static void cleanup(MinecraftServer server) {
+        PendingRewardManager.depositAll(server);
         phase = Phase.IDLE;
         escapeTicksLeft = 0;
         soloMode = false;
@@ -213,7 +215,7 @@ public final class ManhuntGame {
         }
         MileageManager.reset();
         MoraleManager.reset();
-        CardSlotManager.reset();
+        SkillSlotManager.reset();
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
             if (isParticipant(p.getUUID())) {
                 TeamUtil.resetToDefault(p);
@@ -303,7 +305,7 @@ public final class ManhuntGame {
             CompassManager.updateAll(server);
         }
         if (tickCounter % GameConfig.CARD_SLOT_GUARD_INTERVAL_TICKS == 0) {
-            CardSlotManager.tickGuard(server);
+            SkillSlotManager.tickGuard(server);
         }
         if (tickCounter % GameConfig.BOSSBAR_UPDATE_INTERVAL_TICKS == 0 && checkpointBar != null) {
             updateCheckpointBossbar(server);
@@ -349,7 +351,7 @@ public final class ManhuntGame {
                 ? SkillCardsBridge.drawRainbow(rng)
                 : SkillCardsBridge.drawRandom(rng);
             if (draw != null) {
-                CardSlotManager.giveDrawnCard(activator, draw);
+                SkillSlotManager.giveDrawnCard(activator, draw);
                 // 动画（激活者）
                 sendRoll(activator, LootRollPayload.TYPE_CARD,
                     List.of(draw.stack()), SkillCardsBridge.cardAccent(draw));
@@ -370,7 +372,7 @@ public final class ManhuntGame {
 
     private static void sendRoll(ServerPlayer p, int type, List<net.minecraft.world.item.ItemStack> items, int accent) {
         net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(p,
-            new LootRollPayload(type, items, accent));
+            new LootRollPayload(type, items, accent, LootRollPayload.MODE_NEW));
     }
 
     // ==================== 死亡与胜负 ====================
@@ -394,6 +396,7 @@ public final class ManhuntGame {
 
     /** 逃生者死亡：淘汰；全部淘汰则猎人获胜（单人调试模式除外）。 */
     public static void onRunnerDeath(MinecraftServer server, ServerPlayer deadRunner) {
+        PendingRewardManager.discard(deadRunner.getUUID());
         ELIMINATED.add(deadRunner.getUUID());
         broadcast(server, "§6[猎人游戏] §a逃生者 §f" + deadRunner.getName().getString() + " §c被淘汰！"
             + " (剩余 " + aliveRunnerCount() + " 人)");

@@ -34,6 +34,10 @@ public final class MileageManager {
     }
 
     private static void tickPlayer(ServerPlayer p) {
+        // 进入末地后不再累计里程（进入杀龙阶段）
+        if (p.level().dimension() == Level.END) {
+            return;
+        }
         UUID id = p.getUUID();
         ResourceKey<Level> dim = p.level().dimension();
         ResourceKey<Level> lastDim = LAST_DIM.put(id, dim);
