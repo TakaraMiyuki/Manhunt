@@ -155,8 +155,17 @@ public final class SkillSlotManager {
             NonNullList<ItemStack> items = p.getInventory().getNonEquipmentItems();
             for (int i = 0; i < items.size(); i++) {
                 if (i != GameConfig.CARD_SLOT && SkillCardsBridge.isSkillCard(items.get(i))) {
-                    items.set(i, ItemStack.EMPTY);
+                    items.set(i, ItemStack.EMPTY); // 镜像副本，清除防复制
                 }
+            }
+            // 技能槽被放入其他物品：退回背包（技能槽为固定栏位）
+            ItemStack inSlot = items.get(GameConfig.CARD_SLOT);
+            if (!inSlot.isEmpty() && !SkillCardsBridge.isSkillCard(inSlot)) {
+                items.set(GameConfig.CARD_SLOT, ItemStack.EMPTY);
+                if (!p.getInventory().add(inSlot)) {
+                    p.drop(inSlot, false);
+                }
+                p.sendSystemMessage(Component.literal("§7[猎人游戏] 技能槽为固定栏位，物品已退回背包。"), true);
             }
             equipActive(p);
         }

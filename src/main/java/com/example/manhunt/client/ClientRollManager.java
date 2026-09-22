@@ -271,10 +271,8 @@ public final class ClientRollManager {
         int y = GameConfig.ROLL_UI_TOP_OFFSET;
         if (current != null) {
             double elapsed = nowD - current.startTick;
-            if (elapsed >= 0 && (elapsed <= DURATION + 1 || current.claimMode)) {
+            if (elapsed >= 0) {
                 y = renderRoll(g, mc, current, elapsed, y);
-            } else {
-                current = null; // 未领取但动画已结束且未进入领取模式的兜底
             }
         }
         for (Session card : cardQueue) {
@@ -286,7 +284,8 @@ public final class ClientRollManager {
     }
 
     private static int renderRoll(GuiGraphicsExtractor g, Minecraft mc, Session roll, double elapsed, int y) {
-        float alpha = roll.claimMode ? 1.0F : fadeInOut(elapsed);
+        // 动画结束即进入领取模式，面板保持可见（无淡出），直至领取完成或被新一轮替换
+        float alpha = roll.claimMode ? 1.0F : Mth.clamp((float) (elapsed / INTRO), 0.0F, 1.0F);
         if (alpha <= 0.01F) {
             return y;
         }
@@ -402,6 +401,11 @@ public final class ClientRollManager {
     private static int mixAlpha(int argb, float extraAlpha) {
         int a = (int) ((argb >>> 24) * extraAlpha);
         return (a << 24) | (argb & 0xFFFFFF);
+    }
+
+    /** 技能槽边框使用的金色（供 ManhuntClient 复用）。 */
+    static int accentGold() {
+        return 0xFFFFC844;
     }
 
     private static void uiSound(net.minecraft.sounds.SoundEvent sound, float pitch, float volume) {

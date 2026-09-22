@@ -114,6 +114,8 @@ public final class MileageManager {
         long mileage = MILEAGE.getOrDefault(p.getUUID(), 0L);
         p.experienceLevel = ROLL_COUNT.getOrDefault(p.getUUID(), 0);
         p.experienceProgress = (float) (mileage % GameConfig.MILEAGE_PER_ROLL) / GameConfig.MILEAGE_PER_ROLL;
+        // 26.2 经验同步包以 totalExperience 变化为发送条件，必须一并更新，否则客户端永远收不到
+        p.totalExperience = (int) Math.min(Integer.MAX_VALUE, mileage);
     }
 
     // ==================== 状态管理 ====================

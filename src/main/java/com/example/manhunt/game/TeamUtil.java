@@ -115,6 +115,7 @@ public final class TeamUtil {
         p.setHealth(p.getMaxHealth());
         p.experienceLevel = 0;
         p.experienceProgress = 0.0F;
+        p.totalExperience = 0;
         p.sendSystemMessage(Component.literal("§7[猎人游戏] 属性已恢复默认。"));
     }
 }

@@ -59,6 +59,8 @@ public final class MoraleManager {
             return;
         }
         p.experienceLevel = rewards;
+        // 同 MileageManager：totalExperience 变化才触发经验同步包
+        p.totalExperience = morale;
         if (rewards >= GameConfig.MORALE_THRESHOLDS.length) {
             p.experienceProgress = 1.0F;
             return;
