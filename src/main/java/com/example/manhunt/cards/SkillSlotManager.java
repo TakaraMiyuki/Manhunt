@@ -144,6 +144,23 @@ public final class SkillSlotManager {
         }
     }
 
+    /** 技能卡不可丢弃（取消抛掷，卡留在技能库中）。 */
+    public static void onItemToss(net.neoforged.neoforge.event.entity.item.ItemTossEvent event) {
+        if (!SkillCardsBridge.available() || !ManhuntGame.isRunning()) {
+            return;
+        }
+        var player = event.getPlayer();
+        if (!ManhuntGame.isRunner(player.getUUID()) || ManhuntGame.isEliminated(player.getUUID())) {
+            return;
+        }
+        if (SkillCardsBridge.isSkillCard(event.getEntity().getItem())) {
+            event.setCanceled(true);
+            if (player instanceof ServerPlayer serverPlayer) {
+                serverPlayer.sendSystemMessage(Component.literal("§7[猎人游戏] 技能卡无法丢弃，可在技能栏左键切换。"), true);
+            }
+        }
+    }
+
     // ==================== 守护 ====================
 
     /** 每秒守护：固定槽位必须显示激活卡；技能卡不得出现在其他栏位（防复制）。 */

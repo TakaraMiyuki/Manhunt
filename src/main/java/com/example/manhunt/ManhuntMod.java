@@ -64,6 +64,7 @@ public final class ManhuntMod {
         NeoForge.EVENT_BUS.addListener(com.example.manhunt.cards.SkillSlotManager::onLeftClickBlock);
         NeoForge.EVENT_BUS.addListener(com.example.manhunt.cards.SkillSlotManager::onAttackEntity);
         NeoForge.EVENT_BUS.addListener(com.example.manhunt.cards.SkillSlotManager::onLeftClickEmpty);
+        NeoForge.EVENT_BUS.addListener(com.example.manhunt.cards.SkillSlotManager::onItemToss);
     }
 
     private static void onXpOrbTargeting(XpOrbTargetingEvent event) {

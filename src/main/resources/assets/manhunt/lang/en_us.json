@@ -1,4 +1,7 @@
 {
   "item.manhunt.tracking_compass": "Tracking Compass",
-  "item.manhunt.checkpoint_compass": "Checkpoint Compass"
+  "item.manhunt.checkpoint_compass": "Checkpoint Compass",
+  "key.category.manhunt.loot": "Manhunt: Loot Roll",
+  "key.manhunt.loot_mark": "Mark/Unmark Reward",
+  "key.manhunt.loot_claim": "Claim Marked Rewards"
 }

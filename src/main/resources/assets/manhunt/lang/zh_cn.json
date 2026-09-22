@@ -1,4 +1,7 @@
 {
   "item.manhunt.tracking_compass": "追踪罗盘",
-  "item.manhunt.checkpoint_compass": "检查点罗盘"
+  "item.manhunt.checkpoint_compass": "检查点罗盘",
+  "key.category.manhunt.loot": "猎人游戏·资源抽奖",
+  "key.manhunt.loot_mark": "标记/取消标记奖励",
+  "key.manhunt.loot_claim": "领取标记的奖励"
 }

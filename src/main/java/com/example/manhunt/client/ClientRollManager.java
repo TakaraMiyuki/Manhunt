@@ -7,7 +7,10 @@ import com.example.manhunt.GameConfig;
 import com.example.manhunt.net.ClaimRewardPayload;
 import com.example.manhunt.net.LootRollPayload;
 
+import com.mojang.blaze3d.platform.InputConstants;
+
 import net.minecraft.client.DeltaTracker;
+import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
 import net.minecraft.client.gui.screens.ChatScreen;
@@ -212,7 +215,7 @@ public final class ClientRollManager {
         return true;
     }
 
-    /** 鼠标按键。返回 true 表示已消费。 */
+    /** 鼠标按键。返回 true 表示已消费。按键绑定见设置 → 控制 → 猎人游戏·资源抽奖。 */
     public static boolean onMouseButton(int button, int action) {
         if (!hasClaimSession() || action != GLFW.GLFW_PRESS) {
             return false;
@@ -221,44 +224,61 @@ public final class ClientRollManager {
         if (mc.gui.screen() != null) {
             return false;
         }
-        if (button == GLFW.GLFW_MOUSE_BUTTON_RIGHT) {
-            // 右键：领取全部标记物品并关闭界面（未标记则领取当前选中项）
-            List<Integer> claim = current.marked.isEmpty()
-                ? List.of(current.selected)
-                : new ArrayList<>(current.marked);
-            sendClaim(claim);
-            current = null;
+        if (matchesMouse(ManhuntClient.LOOT_MARK, button)) {
+            toggleMark(current);
             return true;
         }
-        if (button == GLFW.GLFW_MOUSE_BUTTON_MIDDLE) {
-            // 中键：标记/取消标记当前选中物品
-            toggleMark(current);
+        if (matchesMouse(ManhuntClient.LOOT_CLAIM, button)) {
+            claimMarkedAndClose();
             return true;
         }
         return false;
     }
 
-    /** 键盘按键（在原版处理后调用）。返回 true 表示已消费。 */
+    private static boolean matchesMouse(KeyMapping keyMapping, int button) {
+        InputConstants.Key key = keyMapping.getKey();
+        return key.getType() == InputConstants.Type.MOUSE && key.getValue() == button;
+    }
+
+    private static boolean matchesKey(KeyMapping keyMapping, int keyCode) {
+        InputConstants.Key key = keyMapping.getKey();
+        return key.getType() == InputConstants.Type.KEYSYM && key.getValue() == keyCode;
+    }
+
+    /** 领取全部标记物品并关闭界面（未标记则领取当前选中项）。 */
+    private static void claimMarkedAndClose() {
+        List<Integer> claim = current.marked.isEmpty()
+            ? List.of(current.selected)
+            : new ArrayList<>(current.marked);
+        sendClaim(claim);
+        current = null;
+    }
+
+    /** 键盘按键（在原版处理后调用）。返回 true 表示已消费。标记/领取的键位可在设置中修改。 */
     public static boolean onKey(int key, int action) {
         if (!hasClaimSession() || action != GLFW.GLFW_PRESS) {
             return false;
         }
         Minecraft mc = Minecraft.getInstance();
-        if (key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER) {
-            // 回车：标记/取消标记当前选中物品；若回车刚打开了聊天栏则关掉
+        // 可改键：标记 / 领取
+        if (matchesKey(ManhuntClient.LOOT_MARK, key)) {
+            if (mc.gui.screen() instanceof ChatScreen) {
+                mc.gui.setScreen(null); // 回车等按键刚打开聊天栏则关掉
+            }
             if (mc.gui.screen() != null) {
-                if (mc.gui.screen() instanceof ChatScreen) {
-                    mc.gui.setScreen(null);
-                } else {
-                    return false; // 其他界面（指令输入等）不接管
-                }
+                return false;
             }
             toggleMark(current);
+            return true;
+        }
+        if (matchesKey(ManhuntClient.LOOT_CLAIM, key)) {
+            claimMarkedAndClose();
             return true;
         }
         if (mc.gui.screen() != null) {
             return false;
         }
+        // 固定备用键：←→ 选择
         if (key == GLFW.GLFW_KEY_LEFT) {
             current.selected = Math.floorMod(current.selected - 1, current.items.size());
             uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.8F, 0.15F);

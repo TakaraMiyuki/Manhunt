@@ -287,7 +287,11 @@ public final class ManhuntGame {
 
         if (tickCounter % GameConfig.METER_SYNC_INTERVAL_TICKS == 0) {
             for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-                if (isParticipant(p.getUUID())) {
+                boolean participant = isParticipant(p.getUUID());
+                boolean runner = TeamUtil.isRunner(p);
+                net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(p,
+                    new com.example.manhunt.net.ManhuntRolePayload(participant, runner));
+                if (participant) {
                     MileageManager.syncMeter(p);
                     MoraleManager.syncMeter(p);
                 }

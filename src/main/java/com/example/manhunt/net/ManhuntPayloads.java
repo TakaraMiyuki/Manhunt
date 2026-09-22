@@ -17,6 +17,7 @@ public final class ManhuntPayloads {
         PayloadRegistrar registrar = event.registrar("1");
         // 仅注册编解码；客户端 handler 由 RegisterClientPayloadHandlersEvent 接管
         registrar.playToClient(LootRollPayload.TYPE, LootRollPayload.STREAM_CODEC);
+        registrar.playToClient(ManhuntRolePayload.TYPE, ManhuntRolePayload.STREAM_CODEC);
         // 领取抽奖奖励：提交标记索引，发放标记物品并关闭（未标记丢弃）
         registrar.playToServer(ClaimRewardPayload.TYPE, ClaimRewardPayload.STREAM_CODEC,
             (payload, ctx) -> {
