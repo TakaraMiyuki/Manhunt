@@ -37,15 +37,15 @@ public final class RewardPools {
     };
     private static final List<String> SINGLE_LEVEL = List.of("silk_touch", "mending", "infinity", "aqua_affinity");
 
-    /** 奖池条目：roll 时生成一份物品。 */
+    /** 奖池条目：roll 时生成一份物品（需发放对象的注册表——数据包注册表条目必须来自活动注册表）。 */
     public interface Entry {
-        ItemStack roll();
+        ItemStack roll(net.minecraft.core.HolderLookup.Provider registries);
     }
 
     /** 固定物品 + 随机数量区间。 */
     public record Simple(Item item, int min, int max) implements Entry {
         @Override
-        public ItemStack roll() {
+        public ItemStack roll(net.minecraft.core.HolderLookup.Provider registries) {
             return new ItemStack(item, min + RNG.nextInt(max - min + 1));
         }
     }
@@ -53,15 +53,15 @@ public final class RewardPools {
     /** 随机附魔书（等级受附魔上限约束）。 */
     public record EnchantedBook(int maxLevelCap) implements Entry {
         @Override
-        public ItemStack roll() {
-            return randomBook(maxLevelCap);
+        public ItemStack roll(net.minecraft.core.HolderLookup.Provider registries) {
+            return randomBook(registries, maxLevelCap);
         }
     }
 
     /** 固定药水。 */
     public record PotionItem(Holder<Potion> potion) implements Entry {
         @Override
-        public ItemStack roll() {
+        public ItemStack roll(net.minecraft.core.HolderLookup.Provider registries) {
             ItemStack stack = new ItemStack(Items.POTION);
             stack.set(DataComponents.POTION_CONTENTS, new PotionContents(potion));
             return stack;
@@ -192,20 +192,14 @@ public final class RewardPools {
         return ALL;
     }
 
-    /** 附魔注册表查找（原版默认值，缓存）。 */
-    private static volatile net.minecraft.core.HolderLookup.Provider ENCHANT_LOOKUP;
-
-    private static net.minecraft.core.HolderLookup.Provider enchantLookup() {
-        if (ENCHANT_LOOKUP == null) {
-            ENCHANT_LOOKUP = net.minecraft.data.registries.VanillaRegistries.createLookup();
-        }
-        return ENCHANT_LOOKUP;
-    }
-
-    /** 随机附魔书生成。 */
-    public static ItemStack randomBook(int maxLevelCap) {
+    /**
+     * 随机附魔书生成。必须使用发放对象的注册表（玩家/世界的活动注册表）——
+     * 附魔是数据包注册表，静态默认表（VanillaRegistries）的 Holder 无法被网络编码，
+     * 会导致 Failed to encode packet / 连接丢失。
+     */
+    public static ItemStack randomBook(net.minecraft.core.HolderLookup.Provider registries, int maxLevelCap) {
         String id = ENCHANT_POOL[RNG.nextInt(ENCHANT_POOL.length)];
-        var registry = enchantLookup().lookupOrThrow(Registries.ENCHANTMENT);
+        var registry = registries.lookupOrThrow(Registries.ENCHANTMENT);
         var key = net.minecraft.resources.ResourceKey.create(
             Registries.ENCHANTMENT, Identifier.withDefaultNamespace(id));
         Optional<Holder.Reference<Enchantment>> holder = registry.get(key);

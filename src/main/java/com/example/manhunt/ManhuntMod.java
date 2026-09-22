@@ -82,23 +82,28 @@ public final class ManhuntMod {
             LOGGER.info("[Manhunt][冒烟测试] 1 号检查点: {}",
                 cp == null ? "未生成" : cp.getX() + ", " + cp.getY() + ", " + cp.getZ());
 
-            // 奖池：每个档位抽 5 件验证无异常
+            // 奖池：每个档位抽多件验证无异常，并对整包做真实网络编码验证
+            // （附魔书 Holder 必须来自活动注册表，否则发送时 Failed to encode → 连接丢失）
+            var registryAccess = server.overworld().registryAccess();
+            var rng = net.minecraft.util.RandomSource.create();
             for (int tier = 0; tier < 5; tier++) {
                 var pool = com.example.manhunt.loot.RewardPools.pool(tier);
-                for (int i = 0; i < 5 && !pool.isEmpty(); i++) {
-                    pool.get(net.minecraft.util.RandomSource.create().nextInt(pool.size())).roll();
+                var items = new java.util.ArrayList<net.minecraft.world.item.ItemStack>();
+                for (int i = 0; i < 20 && !pool.isEmpty(); i++) {
+                    items.add(pool.get(rng.nextInt(pool.size())).roll(registryAccess));
                 }
-                LOGGER.info("[Manhunt][冒烟测试] 奖池档位 {} 共 {} 种条目，抽样通过", tier + 1, pool.size());
+                encodeVerify(items, registryAccess);
+                LOGGER.info("[Manhunt][冒烟测试] 奖池档位 {} 共 {} 种条目，抽样+编码通过", tier + 1, pool.size());
             }
-            // 随机附魔书
-            var book = com.example.manhunt.loot.RewardPools.randomBook(3);
-            LOGGER.info("[Manhunt][冒烟测试] 随机附魔书: {}", book.getItem());
+            // 随机附魔书（重点验证：数据包注册表 Holder 的网络编码）
+            var book = com.example.manhunt.loot.RewardPools.randomBook(registryAccess, 3);
+            encodeVerify(java.util.List.of(book), registryAccess);
+            LOGGER.info("[Manhunt][冒烟测试] 随机附魔书 {} 网络编码通过", book.getItem());
 
             // 技能卡桥接
             LOGGER.info("[Manhunt][冒烟测试] 技能卡模组可用: {}",
                 com.example.manhunt.cards.SkillCardsBridge.available());
             if (com.example.manhunt.cards.SkillCardsBridge.available()) {
-                var rng = net.minecraft.util.RandomSource.create();
                 int common = 0, rare = 0, rainbow = 0, black = 0;
                 for (int i = 0; i < 200; i++) {
                     var draw = com.example.manhunt.cards.SkillCardsBridge.drawRandom(rng);
@@ -128,6 +133,19 @@ public final class ManhuntMod {
             LOGGER.info("[Manhunt][冒烟测试] surfaceY(0,0) = {}", stronghold);
         } catch (Exception e) {
             LOGGER.error("[Manhunt][冒烟测试] 失败", e);
+        }
+    }
+
+    /** 用服务端活动注册表把物品整包走一遍 S2C 编码路径——编码失败即冒烟测试失败。 */
+    private static void encodeVerify(java.util.List<net.minecraft.world.item.ItemStack> items,
+                                     net.minecraft.core.RegistryAccess registryAccess) throws Exception {
+        var buf = new net.minecraft.network.RegistryFriendlyByteBuf(
+            io.netty.buffer.Unpooled.buffer(), registryAccess);
+        var payload = new com.example.manhunt.net.LootRollPayload(
+            com.example.manhunt.net.LootRollPayload.TYPE_SUPER, items, 0);
+        com.example.manhunt.net.LootRollPayload.STREAM_CODEC.encode(buf, payload);
+        if (buf.readableBytes() <= 0) {
+            throw new IllegalStateException("payload 编码后为空");
         }
     }
 }
