@@ -37,48 +37,62 @@ public final class SkillCardsBridge {
         }
     }
 
-    /** 按权重随机抽一张卡。 */
-    public static CardDraw drawRandom(RandomSource rng) {
+    /** 按权重随机抽一张卡（排除已拥有的物品 id；该品级抽完则回退到任意未拥有卡）。 */
+    public static CardDraw drawRandom(RandomSource rng, java.util.Set<String> excludeIds) {
         int total = GameConfig.CARD_WEIGHT_COMMON + GameConfig.CARD_WEIGHT_RARE
             + GameConfig.CARD_WEIGHT_BLACK + GameConfig.CARD_WEIGHT_RAINBOW;
         int roll = rng.nextInt(total);
         if (roll < GameConfig.CARD_WEIGHT_RAINBOW) {
-            return drawOfGrade(com.example.skillcards.registry.Card.Grade.RAINBOW, rng);
+            return drawOfGrade(com.example.skillcards.registry.Card.Grade.RAINBOW, rng, excludeIds);
         }
         if (roll < GameConfig.CARD_WEIGHT_RAINBOW + GameConfig.CARD_WEIGHT_BLACK) {
-            return drawOfGrade(com.example.skillcards.registry.Card.Grade.BLACK, rng);
+            return drawOfGrade(com.example.skillcards.registry.Card.Grade.BLACK, rng, excludeIds);
         }
         if (roll < GameConfig.CARD_WEIGHT_RAINBOW + GameConfig.CARD_WEIGHT_BLACK + GameConfig.CARD_WEIGHT_RARE) {
-            return drawOfGrade(com.example.skillcards.registry.Card.Grade.RARE, rng);
+            return drawOfGrade(com.example.skillcards.registry.Card.Grade.RARE, rng, excludeIds);
         }
-        return drawOfGrade(com.example.skillcards.registry.Card.Grade.COMMON, rng);
+        return drawOfGrade(com.example.skillcards.registry.Card.Grade.COMMON, rng, excludeIds);
     }
 
-    /** 指定品级随机抽一张（要塞检查点固定彩卡）。 */
-    public static CardDraw drawOfGrade(com.example.skillcards.registry.Card.Grade grade, RandomSource rng) {
+    /** 指定品级随机抽一张（排除已拥有；该品级抽完回退到任意未拥有卡，全部集齐返回 null）。 */
+    public static CardDraw drawOfGrade(com.example.skillcards.registry.Card.Grade grade, RandomSource rng,
+                                       java.util.Set<String> excludeIds) {
         List<com.example.skillcards.registry.Card> pool = new ArrayList<>();
+        List<com.example.skillcards.registry.Card> anyUnowned = new ArrayList<>();
         for (com.example.skillcards.registry.Card card : com.example.skillcards.registry.Card.values()) {
+            if (excludeIds.contains(itemIdOf(card))) {
+                continue;
+            }
+            anyUnowned.add(card);
             if (card.grade() == grade) {
                 pool.add(card);
             }
         }
         if (pool.isEmpty()) {
-            return null;
+            pool = anyUnowned; // 该品级已集齐：回退为任意未拥有卡
+        }
+        if (pool.isEmpty()) {
+            return null; // 14 张全部集齐
         }
         com.example.skillcards.registry.Card picked = pool.get(rng.nextInt(pool.size()));
         ItemStack stack = new ItemStack(com.example.skillcards.registry.ModItems.itemOf(picked));
         return new CardDraw(picked, stack);
     }
 
-    /** 固定抽彩卡（要塞检查点）。 */
-    public static CardDraw drawRainbow(RandomSource rng) {
-        return drawOfGrade(com.example.skillcards.registry.Card.Grade.RAINBOW, rng);
+    private static String itemIdOf(com.example.skillcards.registry.Card card) {
+        return net.minecraft.core.registries.BuiltInRegistries.ITEM
+            .getKey(com.example.skillcards.registry.ModItems.itemOf(card)).toString();
+    }
+
+    /** 固定抽彩卡（要塞检查点），排除已拥有。 */
+    public static CardDraw drawRainbow(RandomSource rng, java.util.Set<String> excludeIds) {
+        return drawOfGrade(com.example.skillcards.registry.Card.Grade.RAINBOW, rng, excludeIds);
     }
 
     /** 按品级 id 抽卡（调试指令用：common/rare/rainbow/black，null 表示全权重随机）。 */
     public static CardDraw drawByGradeId(String gradeId, RandomSource rng) {
         if (gradeId == null) {
-            return drawRandom(rng);
+            return drawRandom(rng, java.util.Set.of());
         }
         var grade = switch (gradeId) {
             case "common" -> com.example.skillcards.registry.Card.Grade.COMMON;
@@ -87,7 +101,7 @@ public final class SkillCardsBridge {
             case "black" -> com.example.skillcards.registry.Card.Grade.BLACK;
             default -> null;
         };
-        return grade == null ? null : drawOfGrade(grade, rng);
+        return grade == null ? null : drawOfGrade(grade, rng, java.util.Set.of());
     }
 
     /** 每局开始/结束时重置技能卡的永久加成（如赤鳞跃动的生命/饥饿上限修改）。 */

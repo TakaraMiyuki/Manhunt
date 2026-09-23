@@ -64,14 +64,12 @@ public final class CheckpointManager {
                 ManhuntGame.sendToRunners(server, "§6[猎人游戏] §d里程达标！下一个检查点：末地要塞（坐标 "
                     + stronghold.getX() + ", " + stronghold.getY() + ", " + stronghold.getZ()
                     + "，要塞入口在其地下）");
-                placeMarker(overworld, stronghold);
                 return;
             }
             ManhuntGame.broadcast(server, "§c[猎人游戏] 未能定位末地要塞，可让管理员用 /locate structure minecraft:stronghold 确认。");
         }
         BlockPos next = pickSurfacePoint(overworld, prev, GameConfig.CP_MIN_DIST, GameConfig.CP_MAX_DIST);
         ManhuntGame.setCurrentCheckpoint(next, false);
-        placeMarker(overworld, next);
         ManhuntGame.sendToRunners(server, "§6[猎人游戏] §f下一个检查点坐标: §e"
             + next.getX() + ", " + next.getY() + ", " + next.getZ());
     }
@@ -133,17 +131,6 @@ public final class CheckpointManager {
         return new BlockPos(found.getX(), surfaceY(level, found.getX(), found.getZ()), found.getZ());
     }
 
-    /** 检查点视觉标记：3x3 金块平台 + 3 格高荧石柱。 */
-    private static void placeMarker(ServerLevel level, BlockPos pos) {
-        for (int dx = -1; dx <= 1; dx++) {
-            for (int dz = -1; dz <= 1; dz++) {
-                level.setBlock(pos.offset(dx, -1, dz), Blocks.GOLD_BLOCK.defaultBlockState(), 3);
-            }
-        }
-        level.setBlock(pos, Blocks.GLOWSTONE.defaultBlockState(), 3);
-        level.setBlock(pos.above(), Blocks.GLOWSTONE.defaultBlockState(), 3);
-        level.setBlock(pos.above(2), Blocks.GLOWSTONE.defaultBlockState(), 3);
-    }
 
     // ==================== 激活判定 ====================
 
@@ -153,10 +140,12 @@ public final class CheckpointManager {
         if (cp == null) {
             return;
         }
+        // 水平距离判定（忽略 Y 差）：检查点可能落在树上/悬崖边，玩家在树冠下也应激活
         double radiusSq = GameConfig.CHECKPOINT_ACTIVATE_RADIUS * GameConfig.CHECKPOINT_ACTIVATE_RADIUS;
-        Vec3 center = Vec3.atCenterOf(cp);
         for (ServerPlayer p : ManhuntGame.onlineAliveRunners(server)) {
-            if (p.distanceToSqr(center) <= radiusSq) {
+            double dx = p.getX() - (cp.getX() + 0.5);
+            double dz = p.getZ() - (cp.getZ() + 0.5);
+            if (dx * dx + dz * dz <= radiusSq) {
                 activate(server, p);
                 return; // 一次 tick 只激活一个
             }
@@ -166,6 +155,57 @@ public final class CheckpointManager {
     /** 调试指令 / 靠近触发统一入口。 */
     public static void activate(MinecraftServer server, ServerPlayer activator) {
         onActivated(server, activator);
+    }
+
+    // ==================== 粒子圈 ====================
+
+    /** 激活后变绿的检查点：位置 → 到期时刻。 */
+    private static final java.util.Map<BlockPos, Long> GREEN_RINGS = new java.util.HashMap<>();
+    /** 当前检查点粒子圈（黄色）。 */
+    private static final net.minecraft.core.particles.DustParticleOptions YELLOW_RING =
+        new net.minecraft.core.particles.DustParticleOptions(0xFFD800, 1.4F);
+    /** 激活后的绿色粒子圈。 */
+    private static final net.minecraft.core.particles.DustParticleOptions GREEN_RING =
+        new net.minecraft.core.particles.DustParticleOptions(0x4CFF4C, 1.4F);
+
+    private static long gameTime(MinecraftServer server) {
+        return server.overworld().getGameTime();
+    }
+
+    /** 登记一个刚激活检查点的绿色圈。 */
+    public static void markActivated(BlockPos pos, MinecraftServer server) {
+        GREEN_RINGS.put(pos.immutable(), gameTime(server) + GameConfig.CHECKPOINT_GREEN_SECONDS * 20L);
+    }
+
+    /** 周期绘制检查点粒子圈（当前=黄色，激活过=绿色，10 秒后移除）。 */
+    public static void tickEffects(MinecraftServer server) {
+        ServerLevel overworld = server.overworld();
+        BlockPos current = ManhuntGame.currentCheckpoint();
+        if (current != null) {
+            drawRing(overworld, current, YELLOW_RING);
+        }
+        var it = GREEN_RINGS.entrySet().iterator();
+        while (it.hasNext()) {
+            var e = it.next();
+            if (gameTime(server) >= e.getValue()) {
+                it.remove();
+                continue;
+            }
+            drawRing(overworld, e.getKey(), GREEN_RING);
+        }
+    }
+
+    private static void drawRing(ServerLevel level, BlockPos pos, net.minecraft.core.particles.DustParticleOptions dust) {
+        double cx = pos.getX() + 0.5, cy = pos.getY() + 0.8, cz = pos.getZ() + 0.5;
+        int points = 14;
+        for (int i = 0; i < points; i++) {
+            double angle = Math.PI * 2 * i / points;
+            for (ServerPlayer p : level.players()) {
+                level.sendParticles(p, dust, true, false,
+                    cx + Math.cos(angle) * 2.2, cy, cz + Math.sin(angle) * 2.2,
+                    1, 0.0, 0.05, 0.0, 0.0);
+            }
+        }
     }
 
     /** 供指令展示：最近激活检查点。 */

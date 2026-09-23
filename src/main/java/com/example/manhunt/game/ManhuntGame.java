@@ -162,6 +162,7 @@ public final class ManhuntGame {
             // 重置技能卡永久加成（赤鳞跃动等），避免跨局残留
             SkillCardsBridge.resetPersistentBonuses(p);
             TeamUtil.applyBaseAttributes(p);
+            TeamUtil.fullyRestore(p);
             TeamUtil.refreshBuffs(p);
             if (TeamUtil.isRunner(p)) {
                 TeamUtil.giveInitialKit(p);
@@ -289,8 +290,9 @@ public final class ManhuntGame {
             for (ServerPlayer p : server.getPlayerList().getPlayers()) {
                 boolean participant = isParticipant(p.getUUID());
                 boolean runner = TeamUtil.isRunner(p);
+                boolean skillReady = participant && runner && SkillSlotManager.hasReadyCard(p);
                 net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(p,
-                    new com.example.manhunt.net.ManhuntRolePayload(participant, runner));
+                    new com.example.manhunt.net.ManhuntRolePayload(participant, runner, skillReady));
                 if (participant) {
                     MileageManager.syncMeter(p);
                     MoraleManager.syncMeter(p);
@@ -320,6 +322,9 @@ public final class ManhuntGame {
         if (phase == Phase.RUNNING && tickCounter % GameConfig.ACTIVATION_CHECK_INTERVAL_TICKS == 0) {
             CheckpointManager.checkActivations(server);
         }
+        if (tickCounter % GameConfig.CHECKPOINT_RING_INTERVAL_TICKS == 0) {
+            CheckpointManager.tickEffects(server);
+        }
     }
 
     private static void updateCheckpointBossbar(MinecraftServer server) {
@@ -347,6 +352,9 @@ public final class ManhuntGame {
     public static void onCheckpointActivated(MinecraftServer server, ServerPlayer activator, boolean isStronghold) {
         activatedCount++;
         lastCheckpoint = currentCheckpoint;
+        if (currentCheckpoint != null) {
+            CheckpointManager.markActivated(currentCheckpoint, server);
+        }
         String label = isStronghold ? "§d末地要塞" : "§e第 " + activatedCount + " 个检查点";
         broadcast(server, "§6[猎人游戏] §a逃生者 §f" + activator.getName().getString()
             + " §a激活了" + label + "！");
@@ -354,14 +362,19 @@ public final class ManhuntGame {
         // 技能卡：激活者抽取（要塞固定彩卡）
         if (SkillCardsBridge.available()) {
             net.minecraft.util.RandomSource rng = net.minecraft.util.RandomSource.create();
+            // 不可重复抽取：排除技能库已有的卡，全部集齐则跳过
+            var exclude = SkillSlotManager.ownedIds(activator);
             SkillCardsBridge.CardDraw draw = isStronghold
-                ? SkillCardsBridge.drawRainbow(rng)
-                : SkillCardsBridge.drawRandom(rng);
+                ? SkillCardsBridge.drawRainbow(rng, exclude)
+                : SkillCardsBridge.drawRandom(rng, exclude);
             if (draw != null) {
                 SkillSlotManager.giveDrawnCard(activator, draw);
                 // 动画（激活者）
                 sendRoll(activator, LootRollPayload.TYPE_CARD,
                     List.of(draw.stack()), SkillCardsBridge.cardAccent(draw));
+            } else {
+                activator.sendSystemMessage(Component.literal(
+                    "§6[猎人游戏] §7技能库已集齐全部 14 张卡牌！"), true);
             }
         }
 

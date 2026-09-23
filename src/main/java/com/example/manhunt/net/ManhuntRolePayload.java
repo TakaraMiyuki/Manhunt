@@ -8,9 +8,11 @@ import net.minecraft.resources.Identifier;
 
 /**
  * S2C：玩家在当前对局中的角色标记（每秒随量表同步下发）。
+ * skillReady = 技能库中存在任一冷却完毕的卡（驱动技能槽脉冲边框）。
  * 客户端据此决定是否显示技能槽边框等本地 UI。
  */
-public record ManhuntRolePayload(boolean participant, boolean runner) implements CustomPacketPayload {
+public record ManhuntRolePayload(boolean participant, boolean runner, boolean skillReady)
+    implements CustomPacketPayload {
     public static final CustomPacketPayload.Type<ManhuntRolePayload> TYPE =
         new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath("manhunt", "role"));
 
@@ -19,8 +21,10 @@ public record ManhuntRolePayload(boolean participant, boolean runner) implements
         (buf, payload) -> {
             ByteBufCodecs.BOOL.encode(buf, payload.participant());
             ByteBufCodecs.BOOL.encode(buf, payload.runner());
+            ByteBufCodecs.BOOL.encode(buf, payload.skillReady());
         },
         buf -> new ManhuntRolePayload(
+            ByteBufCodecs.BOOL.decode(buf),
             ByteBufCodecs.BOOL.decode(buf),
             ByteBufCodecs.BOOL.decode(buf)));
 

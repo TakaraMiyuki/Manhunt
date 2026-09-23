@@ -190,6 +190,36 @@ public final class SkillSlotManager {
 
     // ==================== 状态 ====================
 
+    /** 技能库中是否存在任一冷却完毕的卡（驱动技能槽脉冲边框）。 */
+    public static boolean hasReadyCard(ServerPlayer player) {
+        if (!SkillCardsBridge.available()) {
+            return false;
+        }
+        List<ItemStack> cards = COLLECTION.get(player.getUUID());
+        if (cards == null || cards.isEmpty()) {
+            return false;
+        }
+        for (ItemStack stack : cards) {
+            if (!player.getCooldowns().isOnCooldown(stack)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 技能库已拥有的卡牌物品 id 集合（用于不可重复抽取）。 */
+    public static java.util.Set<String> ownedIds(ServerPlayer player) {
+        java.util.Set<String> ids = new java.util.HashSet<>();
+        List<ItemStack> cards = COLLECTION.get(player.getUUID());
+        if (cards != null) {
+            for (ItemStack stack : cards) {
+                ids.add(net.minecraft.core.registries.BuiltInRegistries.ITEM
+                    .getKey(stack.getItem()).toString());
+            }
+        }
+        return ids;
+    }
+
     public static boolean hasCards(UUID id) {
         List<ItemStack> cards = COLLECTION.get(id);
         return cards != null && !cards.isEmpty();

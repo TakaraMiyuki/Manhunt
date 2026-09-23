@@ -80,10 +80,9 @@ public final class ManhuntClient {
         int x = g.guiWidth() / 2 - 90 + 8 * 20 + 2;
         int y = g.guiHeight() - 19;
         long now = mc.level.getGameTime();
-        // 有卡且不在冷却：金色脉冲；冷却中或技能库为空：静态金框
-        boolean cooling = hasCard && mc.player.getCooldowns().isOnCooldown(slot);
+        // 技能库任一卡可用：金色脉冲；全部冷却中或技能库为空：静态金框
         float alpha;
-        if (hasCard && !cooling) {
+        if (hasCard && ManhuntClientState.isSkillReady()) {
             alpha = 0.55F + 0.45F * (float) Math.abs(Math.sin((now + delta.getGameTimeDeltaPartialTick(false)) * 0.25));
         } else {
             alpha = hasCard ? 0.85F : 0.55F;
@@ -104,7 +103,7 @@ public final class ManhuntClient {
     public static void onRegisterClientPayloads(RegisterClientPayloadHandlersEvent event) {
         event.register(LootRollPayload.TYPE, (payload, ctx) -> ClientRollManager.start(payload));
         event.register(com.example.manhunt.net.ManhuntRolePayload.TYPE,
-            (payload, ctx) -> ManhuntClientState.update(payload.participant(), payload.runner()));
+            (payload, ctx) -> ManhuntClientState.update(payload.participant(), payload.runner(), payload.skillReady()));
     }
 
     @SubscribeEvent

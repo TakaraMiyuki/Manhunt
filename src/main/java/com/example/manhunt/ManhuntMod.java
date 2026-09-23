@@ -149,7 +149,7 @@ public final class ManhuntMod {
             if (com.example.manhunt.cards.SkillCardsBridge.available()) {
                 int common = 0, rare = 0, rainbow = 0, black = 0;
                 for (int i = 0; i < 200; i++) {
-                    var draw = com.example.manhunt.cards.SkillCardsBridge.drawRandom(rng);
+                    var draw = com.example.manhunt.cards.SkillCardsBridge.drawRandom(rng, java.util.Set.of());
                     if (draw == null) {
                         continue;
                     }

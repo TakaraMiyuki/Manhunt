@@ -91,6 +91,15 @@ public final class TeamUtil {
         p.removeEffect(MobEffects.WEAKNESS);
     }
 
+    /** 开局补满全部状态：灭火、清效果、满血、满饥饿与饱和。 */
+    public static void fullyRestore(ServerPlayer p) {
+        p.clearFire();
+        p.removeAllEffects();
+        p.setHealth(p.getMaxHealth());
+        p.getFoodData().setFoodLevel(20);
+        p.getFoodData().setSaturation(5.0F);
+    }
+
     /** 逃生者初始装备：石剑、石镐、石斧、泥土 x64。 */
     public static void giveInitialKit(ServerPlayer p) {
         give(p, new ItemStack(Items.STONE_SWORD));

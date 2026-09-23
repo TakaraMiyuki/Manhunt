@@ -8,10 +8,12 @@ public final class ManhuntClientState {
 
     private static volatile boolean participant;
     private static volatile boolean runner;
+    private static volatile boolean skillReady;
 
-    public static void update(boolean isParticipant, boolean isRunner) {
+    public static void update(boolean isParticipant, boolean isRunner, boolean hasReadySkill) {
         participant = isParticipant;
         runner = isRunner;
+        skillReady = hasReadySkill;
     }
 
     public static boolean isParticipant() {
@@ -22,8 +24,14 @@ public final class ManhuntClientState {
         return runner;
     }
 
+    /** 技能库中是否存在任一冷却完毕的卡。 */
+    public static boolean isSkillReady() {
+        return skillReady;
+    }
+
     public static void clear() {
         participant = false;
         runner = false;
+        skillReady = false;
     }
 }

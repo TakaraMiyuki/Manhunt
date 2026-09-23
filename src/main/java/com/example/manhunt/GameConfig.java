@@ -51,6 +51,10 @@ public final class GameConfig {
     public static final double CHECKPOINT_ACTIVATE_RADIUS = 6.0;
     /** 末地要塞搜索半径（区块）。 */
     public static final int STRONGHOLD_SEARCH_RADIUS_CHUNKS = 100;
+    /** 检查点粒子圈刷新间隔（刻）。 */
+    public static final int CHECKPOINT_RING_INTERVAL_TICKS = 10;
+    /** 检查点激活后绿色粒子圈的保留时长（秒）。 */
+    public static final int CHECKPOINT_GREEN_SECONDS = 10;
     /** 表面选址时认为过低的 Y（低于海平面视为水面/湖泊）。 */
     public static final int MIN_SURFACE_Y = 63;
 
