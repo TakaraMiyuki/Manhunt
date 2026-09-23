@@ -53,23 +53,6 @@ public final class MoraleManager {
         return rewards;
     }
 
-    /** 猎人经验条 = 士气量表（进度 = 距下一档，等级 = 已触发档数）。 */
-    public static void syncMeter(ServerPlayer p) {
-        if (!TeamUtil.isHunter(p)) {
-            return;
-        }
-        p.experienceLevel = rewards;
-        // 同 MileageManager：totalExperience 变化才触发经验同步包
-        p.totalExperience = morale;
-        if (rewards >= GameConfig.MORALE_THRESHOLDS.length) {
-            p.experienceProgress = 1.0F;
-            return;
-        }
-        int next = GameConfig.MORALE_THRESHOLDS[rewards];
-        int prev = rewards == 0 ? 0 : GameConfig.MORALE_THRESHOLDS[rewards - 1];
-        p.experienceProgress = (float) (morale - prev) / Math.max(1, next - prev);
-    }
-
     public static void reset() {
         morale = 0;
         rewards = 0;

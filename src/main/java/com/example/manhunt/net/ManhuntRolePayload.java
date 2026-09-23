@@ -9,10 +9,11 @@ import net.minecraft.resources.Identifier;
 /**
  * S2C：玩家在当前对局中的角色标记（每秒随量表同步下发）。
  * skillReady = 技能库中存在任一冷却完毕的卡（驱动技能槽脉冲边框）。
+ * morale/moraleRewards = 猎人全队士气与已达成档数（驱动屏幕上方的士气条 UI）。
  * 客户端据此决定是否显示技能槽边框等本地 UI。
  */
-public record ManhuntRolePayload(boolean participant, boolean runner, boolean skillReady)
-    implements CustomPacketPayload {
+public record ManhuntRolePayload(boolean participant, boolean runner, boolean skillReady,
+                                 int morale, int moraleRewards) implements CustomPacketPayload {
     public static final CustomPacketPayload.Type<ManhuntRolePayload> TYPE =
         new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath("manhunt", "role"));
 
@@ -22,11 +23,15 @@ public record ManhuntRolePayload(boolean participant, boolean runner, boolean sk
             ByteBufCodecs.BOOL.encode(buf, payload.participant());
             ByteBufCodecs.BOOL.encode(buf, payload.runner());
             ByteBufCodecs.BOOL.encode(buf, payload.skillReady());
+            ByteBufCodecs.VAR_INT.encode(buf, payload.morale());
+            ByteBufCodecs.VAR_INT.encode(buf, payload.moraleRewards());
         },
         buf -> new ManhuntRolePayload(
             ByteBufCodecs.BOOL.decode(buf),
             ByteBufCodecs.BOOL.decode(buf),
-            ByteBufCodecs.BOOL.decode(buf)));
+            ByteBufCodecs.BOOL.decode(buf),
+            ByteBufCodecs.VAR_INT.decode(buf),
+            ByteBufCodecs.VAR_INT.decode(buf)));
 
     @Override
     public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {

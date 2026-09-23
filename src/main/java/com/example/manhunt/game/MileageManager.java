@@ -26,9 +26,15 @@ public final class MileageManager {
     private static final Map<UUID, Double> LAST_Z = new HashMap<>();
     private static final Map<UUID, ResourceKey<Level>> LAST_DIM = new HashMap<>();
 
-    /** 每刻累计在线逃生者的水平位移并触发抽奖。 */
+    /** 每刻累计在线参与者的水平位移并触发抽奖（猎人效率为逃生者的 1/3）。 */
     public static void tick(MinecraftServer server) {
-        for (ServerPlayer p : ManhuntGame.onlineAliveRunners(server)) {
+        for (ServerPlayer p : ManhuntGame.onlineParticipants(server)) {
+            if (p.isDeadOrDying() || p.isSpectator()) {
+                continue;
+            }
+            if (TeamUtil.isRunner(p) && ManhuntGame.isEliminated(p.getUUID())) {
+                continue;
+            }
             tickPlayer(p);
         }
     }
@@ -49,6 +55,9 @@ public final class MileageManager {
         double dist = Math.hypot(p.getX() - lastX, p.getZ() - lastZ);
         if (dist <= 0 || dist > GameConfig.MILEAGE_MAX_TICK_DIST) {
             return; // 静止或瞬移（传送/坠落）
+        }
+        if (!TeamUtil.isRunner(p)) {
+            dist *= GameConfig.HUNTER_MILEAGE_FACTOR; // 猎人获取效率 1/3
         }
         double accum = ACCUM.merge(id, dist, Double::sum);
         long mileage = MILEAGE.getOrDefault(id, 0L);
@@ -106,9 +115,9 @@ public final class MileageManager {
 
     // ==================== 经验条接管 ====================
 
-    /** 逃生者经验条 = 里程量表。 */
+    /** 经验条 = 里程量表（逃生者与猎人通用，猎人效率为 1/3）。 */
     public static void syncMeter(ServerPlayer p) {
-        if (!TeamUtil.isRunner(p)) {
+        if (!ManhuntGame.isParticipant(p.getUUID())) {
             return;
         }
         long mileage = MILEAGE.getOrDefault(p.getUUID(), 0L);

@@ -9,11 +9,16 @@ public final class ManhuntClientState {
     private static volatile boolean participant;
     private static volatile boolean runner;
     private static volatile boolean skillReady;
+    private static volatile int morale;
+    private static volatile int moraleRewards;
 
-    public static void update(boolean isParticipant, boolean isRunner, boolean hasReadySkill) {
+    public static void update(boolean isParticipant, boolean isRunner, boolean hasReadySkill,
+                              int moraleValue, int moraleRewardCount) {
         participant = isParticipant;
         runner = isRunner;
         skillReady = hasReadySkill;
+        morale = moraleValue;
+        moraleRewards = moraleRewardCount;
     }
 
     public static boolean isParticipant() {
@@ -29,9 +34,21 @@ public final class ManhuntClientState {
         return skillReady;
     }
 
+    /** 当前全队士气（猎人）。 */
+    public static int morale() {
+        return morale;
+    }
+
+    /** 已达成的士气档数（猎人）。 */
+    public static int moraleRewards() {
+        return moraleRewards;
+    }
+
     public static void clear() {
         participant = false;
         runner = false;
         skillReady = false;
+        morale = 0;
+        moraleRewards = 0;
     }
 }

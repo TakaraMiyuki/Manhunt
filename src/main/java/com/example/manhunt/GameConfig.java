@@ -26,6 +26,8 @@ public final class GameConfig {
     public static final int STRONGHOLD_MILEAGE = 3000;
     /** 单刻水平位移超过该值（格）不计里程（防传送/坠落刷里程）。 */
     public static final double MILEAGE_MAX_TICK_DIST = 10.0;
+    /** 猎人里程获取效率（相对逃生者的倍率）。 */
+    public static final double HUNTER_MILEAGE_FACTOR = 1.0 / 3.0;
 
     // ==================== 技能卡 ====================
     /** 抽卡权重：普通/稀有/黑卡/彩卡（合计任意，按比例分配）。 */

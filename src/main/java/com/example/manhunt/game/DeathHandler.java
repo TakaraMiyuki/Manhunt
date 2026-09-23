@@ -223,7 +223,6 @@ public final class DeathHandler {
         }
         TeamUtil.refreshBuffs(player);
         MileageManager.syncMeter(player);
-        MoraleManager.syncMeter(player);
     }
 
     /** 逃生者切换维度时切换增益组（进末地强化）。 */

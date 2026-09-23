@@ -59,6 +59,49 @@ public final class ManhuntClient {
         event.registerAboveAll(
             Identifier.fromNamespaceAndPath(ManhuntMod.MODID, "skill_slot_border"),
             ManhuntClient::renderSkillSlotBorder);
+        event.registerAboveAll(
+            Identifier.fromNamespaceAndPath(ManhuntMod.MODID, "morale_bar"),
+            ManhuntClient::renderMoraleBar);
+    }
+
+    /**
+     * 猎人士气条：屏幕上方的独立条状 UI（蓝条 + 档数标注），与原版 bossbar 位置错开。
+     * 进度 = 距下一档士气（达到 1000 封顶后恒满）。
+     */
+    private static void renderMoraleBar(GuiGraphicsExtractor g, DeltaTracker delta) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null || mc.gui.hud.isHidden()) {
+            return;
+        }
+        if (!ManhuntClientState.isParticipant() || ManhuntClientState.isRunner()) {
+            return; // 仅猎人显示
+        }
+        int morale = ManhuntClientState.morale();
+        int rewards = ManhuntClientState.moraleRewards();
+        int[] thresholds = com.example.manhunt.GameConfig.MORALE_THRESHOLDS;
+        float progress;
+        if (rewards >= thresholds.length) {
+            progress = 1.0F;
+        } else {
+            int next = thresholds[rewards];
+            int prev = rewards == 0 ? 0 : thresholds[rewards - 1];
+            progress = net.minecraft.util.Mth.clamp((morale - prev) / (float) Math.max(1, next - prev), 0.0F, 1.0F);
+        }
+        int w = 182;
+        int x = (g.guiWidth() - w) / 2;
+        int y = 28;
+        // 标注：士气值 + 档数
+        String label = "§b士气 " + morale + " §7· 档 " + rewards + "/" + thresholds.length;
+        g.text(mc.font, label, (g.guiWidth() - mc.font.width(label)) / 2, y - 10, 0xFFFFFFFF, true);
+        // 底板 + 蓝色填充 + 细边框
+        g.fill(x - 1, y - 1, x + w + 1, y + 6, 0xC0101010);
+        g.fill(x, y, x + w, y + 5, 0xFF2A2A2A);
+        int fill = (int) (w * progress);
+        if (fill > 0) {
+            g.fill(x, y, x + fill, y + 5, 0xFF0078D4);
+        }
+        g.fill(x - 1, y - 1, x, y + 6, 0xFF3C3C3C);
+        g.fill(x + w, y - 1, x + w + 1, y + 6, 0xFF3C3C3C);
     }
 
     /**
@@ -103,7 +146,7 @@ public final class ManhuntClient {
     public static void onRegisterClientPayloads(RegisterClientPayloadHandlersEvent event) {
         event.register(LootRollPayload.TYPE, (payload, ctx) -> ClientRollManager.start(payload));
         event.register(com.example.manhunt.net.ManhuntRolePayload.TYPE,
-            (payload, ctx) -> ManhuntClientState.update(payload.participant(), payload.runner(), payload.skillReady()));
+            (payload, ctx) -> ManhuntClientState.update(payload.participant(), payload.runner(), payload.skillReady(), payload.morale(), payload.moraleRewards()));
     }
 
     @SubscribeEvent

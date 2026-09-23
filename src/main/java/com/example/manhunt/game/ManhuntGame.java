@@ -167,10 +167,8 @@ public final class ManhuntGame {
             if (TeamUtil.isRunner(p)) {
                 TeamUtil.giveInitialKit(p);
                 CompassManager.giveCheckpointCompass(p);
-                MileageManager.syncMeter(p);
-            } else {
-                MoraleManager.syncMeter(p);
             }
+            MileageManager.syncMeter(p);
             countdownBar.addPlayer(p);
             if (TeamUtil.isRunner(p)) {
                 p.sendSystemMessage(Component.literal(
@@ -224,6 +222,9 @@ public final class ManhuntGame {
                 SkillCardsBridge.resetPersistentBonuses(p);
                 TeamUtil.resetToDefault(p);
             }
+            // 通知客户端清除本地状态（角色/士气条）
+            net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(p,
+                new com.example.manhunt.net.ManhuntRolePayload(false, false, false, 0, 0));
         }
         PENDING_RESPAWNS.clear();
         RESPAWN_WAITS.clear();
@@ -248,7 +249,6 @@ public final class ManhuntGame {
             if (TeamUtil.isHunter(p)) {
                 TeamUtil.clearEscapeDebuffs(p);
                 CompassManager.giveTrackingCompass(p);
-                MoraleManager.syncMeter(p);
             }
             if (TeamUtil.isRunner(p) && !isEliminated(p.getUUID())) {
                 checkpointBar.addPlayer(p);
@@ -292,10 +292,10 @@ public final class ManhuntGame {
                 boolean runner = TeamUtil.isRunner(p);
                 boolean skillReady = participant && runner && SkillSlotManager.hasReadyCard(p);
                 net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(p,
-                    new com.example.manhunt.net.ManhuntRolePayload(participant, runner, skillReady));
+                    new com.example.manhunt.net.ManhuntRolePayload(participant, runner, skillReady,
+                        MoraleManager.morale(), MoraleManager.rewards()));
                 if (participant) {
                     MileageManager.syncMeter(p);
-                    MoraleManager.syncMeter(p);
                 }
             }
         }
@@ -477,7 +477,6 @@ public final class ManhuntGame {
             TeamUtil.applyBaseAttributes(p);
             TeamUtil.refreshBuffs(p);
             MileageManager.syncMeter(p);
-            MoraleManager.syncMeter(p);
             done.add(e.getKey());
         }
         for (UUID id : done) {
