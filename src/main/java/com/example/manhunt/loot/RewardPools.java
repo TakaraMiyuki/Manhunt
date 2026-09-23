@@ -102,13 +102,27 @@ public final class RewardPools {
         new Simple(Items.BAKED_POTATO, 3, 6, 2), new Simple(Items.APPLE, 2, 4, 2),
         new Simple(Items.MELON_SLICE, 4, 8, 2), new Simple(Items.SWEET_BERRIES, 3, 6, 2),
         new Simple(Items.COOKED_COD, 2, 4, 2), new Simple(Items.PUMPKIN_PIE, 1, 2, 1),
-        new Simple(Items.WHEAT_SEEDS, 2, 6, 2),
+        new Simple(Items.WHEAT_SEEDS, 2, 6, 2), new Simple(Items.BEEF, 2, 4, 2),
+        new Simple(Items.PORKCHOP, 2, 4, 2), new Simple(Items.CHICKEN, 2, 4, 2),
+        new Simple(Items.BROWN_MUSHROOM, 2, 4, 2), new Simple(Items.RED_MUSHROOM, 2, 4, 2),
+        new Simple(Items.DRIED_KELP, 4, 8, 2), new Simple(Items.BEETROOT, 3, 6, 2),
+        new Simple(Items.WHEAT, 2, 5, 2), new Simple(Items.PUMPKIN, 1, 2, 1),
         // 合成材料
-        new Simple(Items.OAK_LOG, 4, 8, 3), new Simple(Items.OAK_PLANKS, 8, 16, 2),
+        new Simple(Items.OAK_LOG, 4, 8, 3), new Simple(Items.SPRUCE_LOG, 4, 8, 2),
+        new Simple(Items.BIRCH_LOG, 4, 8, 2), new Simple(Items.OAK_PLANKS, 8, 16, 2),
         new Simple(Items.COBBLESTONE, 8, 16, 3), new Simple(Items.COAL, 4, 8, 3),
         new Simple(Items.STICK, 8, 16, 2), new Simple(Items.IRON_NUGGET, 6, 12, 2),
         new Simple(Items.FLINT, 2, 4, 2), new Simple(Items.LEATHER, 1, 3, 2),
-        new Simple(Items.TORCH, 8, 16, 2),
+        new Simple(Items.TORCH, 8, 16, 2), new Simple(Items.SAND, 8, 16, 2),
+        new Simple(Items.GRAVEL, 4, 8, 2), new Simple(Items.CLAY_BALL, 2, 4, 2),
+        new Simple(Items.BAMBOO, 3, 6, 1), new Simple(Items.CACTUS, 2, 4, 1),
+        new Simple(Items.FEATHER, 2, 4, 2), new Simple(Items.PAPER, 2, 4, 2),
+        new Simple(Items.SUGAR, 2, 4, 1), new Simple(Items.COCOA_BEANS, 2, 4, 1),
+        new Simple(Items.INK_SAC, 1, 3, 1),
+        // 实用道具
+        new Simple(Items.BOWL, 2, 4, 1), new Simple(Items.CHEST, 1, 1, 1),
+        new Simple(Items.CRAFTING_TABLE, 1, 1, 1), new Simple(Items.FURNACE, 1, 1, 1),
+        new Simple(Items.OAK_SAPLING, 1, 2, 1),
         // 杂物
         new Simple(Items.SUGAR_CANE, 2, 4, 2), new Simple(Items.EGG, 2, 6, 2),
         new Simple(Items.BONE, 2, 4, 2), new Simple(Items.STRING, 2, 4, 2),
@@ -116,28 +130,42 @@ public final class RewardPools {
         new Simple(Items.DYE.yellow(), 2, 4, 1), new Simple(Items.DYE.blue(), 2, 4, 1),
         new Simple(Items.ROTTEN_FLESH, 2, 6, 1),
         // 装备（低权重）
-        new Simple(Items.WOODEN_PICKAXE, 1, 1, 1), new Simple(Items.STONE_SWORD, 1, 1, 1),
-        new Simple(Items.STONE_SHOVEL, 1, 1, 1), new Simple(Items.LEATHER_HELMET, 1, 1, 1),
-        new Simple(Items.LEATHER_CHESTPLATE, 1, 1, 1), new Simple(Items.LEATHER_BOOTS, 1, 1, 1));
+        new Simple(Items.WOODEN_PICKAXE, 1, 1, 1), new Simple(Items.WOODEN_SWORD, 1, 1, 1),
+        new Simple(Items.STONE_SWORD, 1, 1, 1), new Simple(Items.STONE_SHOVEL, 1, 1, 1),
+        new Simple(Items.STONE_AXE, 1, 1, 1), new Simple(Items.LEATHER_HELMET, 1, 1, 1),
+        new Simple(Items.LEATHER_CHESTPLATE, 1, 1, 1), new Simple(Items.LEATHER_LEGGINGS, 1, 1, 1),
+        new Simple(Items.LEATHER_BOOTS, 1, 1, 1));
 
     private static final List<Entry> TIER_2 = List.of(
         // 食物（主力）
         new Simple(Items.BREAD, 4, 8, 3), new Simple(Items.COOKED_BEEF, 3, 6, 3),
         new Simple(Items.COOKED_PORKCHOP, 3, 6, 2), new Simple(Items.COOKED_CHICKEN, 3, 6, 2),
         new Simple(Items.COOKED_SALMON, 3, 6, 2), new Simple(Items.GOLDEN_CARROT, 1, 2, 2),
-        new Simple(Items.BAKED_POTATO, 4, 8, 2),
+        new Simple(Items.BAKED_POTATO, 4, 8, 2), new Simple(Items.COOKED_MUTTON, 3, 6, 2),
+        new Simple(Items.RABBIT, 2, 4, 1), new Simple(Items.TROPICAL_FISH, 1, 2, 1),
+        new Simple(Items.SUSPICIOUS_STEW, 1, 1, 1), new Simple(Items.DRIED_KELP_BLOCK, 1, 2, 1),
+        new Simple(Items.PUMPKIN_PIE, 1, 2, 2),
         // 合成材料/消耗品
         new Simple(Items.IRON_INGOT, 2, 5, 3), new Simple(Items.COPPER_INGOT, 4, 8, 3),
         new Simple(Items.GOLD_INGOT, 1, 4, 2), new Simple(Items.COAL, 6, 12, 2),
         new Simple(Items.REDSTONE, 2, 6, 2), new Simple(Items.LAPIS_LAZULI, 2, 6, 2),
         new Simple(Items.GUNPOWDER, 1, 4, 2), new Simple(Items.GLASS, 4, 8, 2),
         new Simple(Items.LADDER, 4, 8, 2), new Simple(Items.ARROW, 8, 16, 2),
-        new Simple(Items.HONEY_BOTTLE, 1, 2, 1),
+        new Simple(Items.HONEY_BOTTLE, 1, 2, 1), new Simple(Items.STRING, 2, 4, 2),
+        new Simple(Items.FEATHER, 2, 4, 2), new Simple(Items.SLIME_BALL, 1, 3, 2),
+        new Simple(Items.PAPER, 3, 6, 2), new Simple(Items.SUGAR, 2, 4, 2),
+        new Simple(Items.HONEYCOMB, 1, 3, 2), new Simple(Items.QUARTZ, 2, 5, 2),
+        new Simple(Items.MAGMA_CREAM, 1, 2, 1), new Simple(Items.BLAZE_POWDER, 1, 2, 1),
+        new Simple(Items.BRICK, 2, 6, 2), new Simple(Items.SANDSTONE, 4, 8, 1),
+        new Simple(Items.NETHER_WART, 2, 4, 1), new Simple(Items.GLOWSTONE_DUST, 2, 4, 2),
+        new Simple(Items.GLASS_BOTTLE, 2, 4, 2),
         // 实用道具
         new Simple(Items.BUCKET, 1, 1, 2), new Simple(Items.SHEARS, 1, 1, 2),
         new Simple(Items.COMPASS, 1, 1, 1), new Simple(Items.CLOCK, 1, 1, 1),
         new Simple(Items.OAK_BOAT, 1, 1, 1), new Simple(Items.CAMPFIRE, 1, 1, 1),
-        new Simple(Items.WRITABLE_BOOK, 1, 1, 1),
+        new Simple(Items.WRITABLE_BOOK, 1, 1, 1), new Simple(Items.FISHING_ROD, 1, 1, 1),
+        new Simple(Items.LEAD, 1, 1, 2), new Simple(Items.PAINTING, 1, 1, 1),
+        new Simple(Items.ITEM_FRAME, 1, 1, 1),
         // 装备（低权重）
         new Simple(Items.BOW, 1, 1, 1), new Simple(Items.IRON_PICKAXE, 1, 1, 1),
         new Simple(Items.IRON_SWORD, 1, 1, 1), new Simple(Items.IRON_AXE, 1, 1, 1),
@@ -149,15 +177,21 @@ public final class RewardPools {
         // 食物（主力）
         new Simple(Items.COOKED_BEEF, 4, 8, 3), new Simple(Items.COOKED_PORKCHOP, 4, 8, 2),
         new Simple(Items.BREAD, 6, 12, 2), new Simple(Items.GOLDEN_CARROT, 2, 4, 2),
+        new Simple(Items.COOKED_MUTTON, 4, 8, 2), new Simple(Items.COOKED_RABBIT, 3, 6, 2),
+        new Simple(Items.CAKE, 1, 1, 1),
         // 合成材料/消耗品
         new Simple(Items.DIAMOND, 1, 2, 2), new Simple(Items.EMERALD, 2, 5, 2),
         new Simple(Items.IRON_BLOCK, 1, 2, 2), new Simple(Items.OBSIDIAN, 2, 6, 2),
         new Simple(Items.EXPERIENCE_BOTTLE, 4, 8, 3), new Simple(Items.AMETHYST_SHARD, 1, 3, 2),
         new Simple(Items.ENDER_PEARL, 1, 2, 2), new Simple(Items.ARROW, 16, 32, 2),
-        new Simple(Items.GOLDEN_APPLE, 1, 1, 1),
+        new Simple(Items.GOLDEN_APPLE, 1, 1, 1), new Simple(Items.RAW_IRON, 2, 4, 2),
+        new Simple(Items.RAW_GOLD, 1, 3, 2), new Simple(Items.RAW_COPPER, 3, 6, 2),
+        new Simple(Items.CHARCOAL, 4, 8, 2), new Simple(Items.IRON_NUGGET, 6, 12, 2),
         // 实用道具
         new Simple(Items.ANVIL, 1, 1, 1), new Simple(Items.SADDLE, 1, 1, 1),
         new Simple(Items.NAME_TAG, 1, 1, 1), new Simple(Items.PRISMARINE_SHARD, 2, 6, 2),
+        new Simple(Items.BOOKSHELF, 1, 2, 1), new Simple(Items.LODESTONE, 1, 1, 1),
+        new Simple(Items.FIRE_CHARGE, 1, 2, 1),
         // 装备（低权重）
         new Simple(Items.IRON_CHESTPLATE, 1, 1, 1), new Simple(Items.IRON_LEGGINGS, 1, 1, 1),
         new Simple(Items.IRON_HELMET, 1, 1, 1), new Simple(Items.IRON_BOOTS, 1, 1, 1),
@@ -171,15 +205,21 @@ public final class RewardPools {
         new Simple(Items.ENDER_EYE, 3, 6, 3), new Simple(Items.ENDER_PEARL, 2, 4, 2),
         new Simple(Items.ELYTRA, 1, 1, 1), new Simple(Items.ARROW, 32, 64, 2),
         new PotionItem(Potions.STRONG_STRENGTH, 2), new PotionItem(Potions.LONG_FIRE_RESISTANCE, 2),
+        new PotionItem(Potions.LONG_SWIFTNESS, 2),
         // 食物
         new Simple(Items.GOLDEN_APPLE, 1, 2, 2), new Simple(Items.COOKED_BEEF, 6, 12, 2),
         new Simple(Items.ENCHANTED_GOLDEN_APPLE, 1, 1, 1),
+        new Simple(Items.GLOW_BERRIES, 4, 8, 2), new Simple(Items.CHORUS_FRUIT, 2, 4, 2),
         // 合成材料/消耗品
         new Simple(Items.DIAMOND, 2, 4, 2), new Simple(Items.EXPERIENCE_BOTTLE, 8, 16, 2),
         new Simple(Items.PHANTOM_MEMBRANE, 2, 4, 2), new Simple(Items.NETHERITE_SCRAP, 1, 1, 1),
+        new Simple(Items.ECHO_SHARD, 1, 2, 1), new Simple(Items.EMERALD_BLOCK, 1, 1, 1),
         // 实用道具
         new Simple(Items.SADDLE, 1, 1, 1), new Simple(Items.NAME_TAG, 1, 1, 1),
-        new Simple(Items.TOTEM_OF_UNDYING, 1, 1, 1),
+        new Simple(Items.TOTEM_OF_UNDYING, 1, 1, 1), new Simple(Items.ENDER_CHEST, 1, 1, 1),
+        new Simple(Items.SHULKER_BOX, 1, 1, 1), new Simple(Items.LODESTONE, 1, 1, 1),
+        new Simple(Items.NETHERITE_UPGRADE_SMITHING_TEMPLATE, 1, 1, 1),
+        new Simple(Items.DIAMOND_HORSE_ARMOR, 1, 1, 1),
         // 装备（低权重）
         new Simple(Items.DIAMOND_SWORD, 1, 1, 1), new Simple(Items.DIAMOND_PICKAXE, 1, 1, 1),
         new Simple(Items.DIAMOND_CHESTPLATE, 1, 1, 1), new Simple(Items.CROSSBOW, 1, 1, 1));
