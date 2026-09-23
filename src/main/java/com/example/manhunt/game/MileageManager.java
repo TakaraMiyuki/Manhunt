@@ -115,12 +115,28 @@ public final class MileageManager {
 
     // ==================== 经验条接管 ====================
 
-    /** 经验条 = 里程量表（逃生者与猎人通用，猎人效率为 1/3）。 */
+    /** 经验条 = 里程量表（双方通用）。猎人士气增长后 5 秒内由士气量表临时接管。 */
     public static void syncMeter(ServerPlayer p) {
         if (!ManhuntGame.isParticipant(p.getUUID())) {
             return;
         }
         long mileage = MILEAGE.getOrDefault(p.getUUID(), 0L);
+        MinecraftServer server = p.level().getServer();
+        if (TeamUtil.isHunter(p) && server != null && MoraleManager.showingOnMeter(server)) {
+            // 士气量表临时接管经验条
+            int rewards = MoraleManager.rewards();
+            int morale = MoraleManager.morale();
+            p.experienceLevel = rewards;
+            p.totalExperience = 1_000_000 + morale; // 与里程域区分，保证量表切换触发同步包
+            if (rewards >= GameConfig.MORALE_THRESHOLDS.length) {
+                p.experienceProgress = 1.0F;
+            } else {
+                int next = GameConfig.MORALE_THRESHOLDS[rewards];
+                int prev = rewards == 0 ? 0 : GameConfig.MORALE_THRESHOLDS[rewards - 1];
+                p.experienceProgress = (float) (morale - prev) / Math.max(1, next - prev);
+            }
+            return;
+        }
         p.experienceLevel = ROLL_COUNT.getOrDefault(p.getUUID(), 0);
         p.experienceProgress = (float) (mileage % GameConfig.MILEAGE_PER_ROLL) / GameConfig.MILEAGE_PER_ROLL;
         // 26.2 经验同步包以 totalExperience 变化为发送条件，必须一并更新，否则客户端永远收不到

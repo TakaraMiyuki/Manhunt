@@ -25,9 +25,10 @@ public final class LootRoller {
         PendingRewardManager.start(player, LootRollPayload.TYPE_RESOURCE, items);
     }
 
-    /** 超级抽奖：不限档位全池抽 {@code GameConfig.SUPER_ROLL_ITEMS} 种。 */
+    /** 超级抽奖：从当前里程档及以上的池抽 {@code GameConfig.SUPER_ROLL_ITEMS} 种（不出现更差的物资）。 */
     public static void superRoll(ServerPlayer player) {
-        List<ItemStack> items = doRoll(RewardPools.allPools(), GameConfig.SUPER_ROLL_ITEMS, player.registryAccess());
+        int tier = RewardPools.tierOf(com.example.manhunt.game.MileageManager.mileage(player.getUUID()));
+        List<ItemStack> items = doRoll(RewardPools.poolsFrom(tier), GameConfig.SUPER_ROLL_ITEMS, player.registryAccess());
         PendingRewardManager.start(player, LootRollPayload.TYPE_SUPER, items);
     }
 

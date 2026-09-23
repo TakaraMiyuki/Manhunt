@@ -20,12 +20,14 @@ public final class MoraleManager {
 
     private static int morale = 0;
     private static int rewards = 0;
+    private static long lastGainTime = Long.MIN_VALUE;
 
     /** 累计士气并结算跨过的阈值（一次大额伤害可连跨多档）。 */
     public static void addMorale(MinecraftServer server, int amount) {
         if (amount <= 0 || morale >= GameConfig.MORALE_CAP) {
             return;
         }
+        lastGainTime = server.overworld().getGameTime();
         morale = Math.min(GameConfig.MORALE_CAP, morale + amount);
         int newRewards = 0;
         while (rewards < GameConfig.MORALE_THRESHOLDS.length
@@ -53,9 +55,16 @@ public final class MoraleManager {
         return rewards;
     }
 
+    /** 士气量表是否临时接管猎人经验条（士气增长后 5 秒内）。 */
+    public static boolean showingOnMeter(MinecraftServer server) {
+        return lastGainTime != Long.MIN_VALUE
+            && server.overworld().getGameTime() - lastGainTime < GameConfig.MORALE_METER_SHOW_TICKS;
+    }
+
     public static void reset() {
         morale = 0;
         rewards = 0;
+        lastGainTime = Long.MIN_VALUE;
     }
 
     // ==================== 持久化 ====================

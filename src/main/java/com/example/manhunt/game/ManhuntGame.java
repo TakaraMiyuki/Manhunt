@@ -50,6 +50,8 @@ public final class ManhuntGame {
     private static boolean forceNextStronghold = false;
     /** 最近激活的检查点（复活兜底锚点）。 */
     private static BlockPos lastCheckpoint;
+    /** 末地传送门房间位置（要塞检查点生成时定位，猎人罗盘指向目标）。 */
+    private static net.minecraft.core.GlobalPos strongholdPortalPos;
     private static int activatedCount = 0;
     private static int escapeTicksLeft = 0;
     private static int tickCounter = 0;
@@ -89,6 +91,10 @@ public final class ManhuntGame {
 
     public static BlockPos lastCheckpoint() { return lastCheckpoint; }
 
+    public static net.minecraft.core.GlobalPos strongholdPortalPos() { return strongholdPortalPos; }
+
+    public static void setStrongholdPortalPos(net.minecraft.core.GlobalPos pos) { strongholdPortalPos = pos; }
+
     public static void setCurrentCheckpoint(BlockPos pos, boolean stronghold) {
         currentCheckpoint = pos;
         currentIsStronghold = pos != null && stronghold;
@@ -104,6 +110,7 @@ public final class ManhuntGame {
 
     static void resetStrongholdForce() {
         forceNextStronghold = false;
+        strongholdPortalPos = null;
     }
 
     // ==================== 生命周期 ====================
@@ -220,6 +227,7 @@ public final class ManhuntGame {
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
             if (isParticipant(p.getUUID())) {
                 SkillCardsBridge.resetPersistentBonuses(p);
+                p.getInventory().clearContent(); // 对局重置清空背包
                 TeamUtil.resetToDefault(p);
             }
             // 通知客户端清除本地状态（角色/士气条）

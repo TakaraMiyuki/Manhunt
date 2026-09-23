@@ -112,8 +112,23 @@ public final class CompassManager {
                 if (target == null) {
                     return;
                 }
-                setTracker(stack, decorate(hunter.getUUID(),
-                    GlobalPos.of(target.level().dimension(), target.blockPosition())));
+                GlobalPos pos;
+                if (target.level().dimension() == Level.END) {
+                    // 目标进入末地：罗盘指向末地传送门（猎人在主世界时指向要塞传送门房间，
+                    // 猎人也已进入末地时指向末地中央出口传送门）
+                    if (hunter.level().dimension() == Level.END) {
+                        pos = GlobalPos.of(Level.END, BlockPos.ZERO);
+                    } else {
+                        GlobalPos portal = ManhuntGame.strongholdPortalPos();
+                        pos = portal != null ? portal
+                            : GlobalPos.of(Level.OVERWORLD, ManhuntGame.lastCheckpoint() != null
+                                ? ManhuntGame.lastCheckpoint() : target.blockPosition());
+                    }
+                } else {
+                    pos = decorate(hunter.getUUID(),
+                        GlobalPos.of(target.level().dimension(), target.blockPosition()));
+                }
+                setTracker(stack, pos);
             });
         }
 

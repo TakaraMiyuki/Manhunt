@@ -24,10 +24,29 @@ public final class PendingRewardManager {
     private record Pending(int type, List<ItemStack> remaining) {}
 
     private static final Map<UUID, Pending> PENDING = new HashMap<>();
+    /** 超级抽奖进行中积攒的普通资源抽奖（超级结束后依次开启，上限 6 次）。 */
+    private static final Map<UUID, List<Pending>> QUEUED = new HashMap<>();
+    private static final int MAX_QUEUED = 6;
 
     /** 开启一轮新的待领取（若上一轮未领取完则视为放弃）。 */
     public static void start(ServerPlayer player, int type, List<ItemStack> items) {
         if (items.isEmpty()) {
+            return;
+        }
+        // 超级抽奖优先级最高：进行中的超级抽奖不会被普通资源抽奖顶掉，普通抽奖改为积攒
+        Pending existing = PENDING.get(player.getUUID());
+        if (existing != null && existing.type() == LootRollPayload.TYPE_SUPER
+                && type == LootRollPayload.TYPE_RESOURCE) {
+            List<Pending> queue = QUEUED.computeIfAbsent(player.getUUID(), k -> new ArrayList<>());
+            if (queue.size() < MAX_QUEUED) {
+                queue.add(new Pending(type, new ArrayList<>(items)));
+                player.sendSystemMessage(Component.literal(
+                        "§7[猎人游戏] 超级抽奖进行中，本次资源抽奖已积攒（"
+                            + queue.size() + "/" + MAX_QUEUED + "）。"), true);
+            } else {
+                player.sendSystemMessage(Component.literal(
+                        "§7[猎人游戏] 积攒已满，本次资源抽奖已放弃。"), true);
+            }
             return;
         }
         discardExisting(player);
@@ -51,6 +70,19 @@ public final class PendingRewardManager {
         if (claimed > 0) {
             player.playSound(net.minecraft.sounds.SoundEvents.EXPERIENCE_ORB_PICKUP, 0.5F, 1.0F);
         }
+        // 超级抽奖结束：依次开启积攒的普通资源抽奖
+        List<Pending> queue = QUEUED.remove(player.getUUID());
+        if (queue != null && !queue.isEmpty()) {
+            Pending next = queue.get(0);
+            if (queue.size() > 1) {
+                QUEUED.put(player.getUUID(), new ArrayList<>(queue.subList(1, queue.size())));
+            }
+            PENDING.put(player.getUUID(), next);
+            send(player, new LootRollPayload(next.type(), next.remaining(), accentOf(next.type()),
+                LootRollPayload.MODE_NEW));
+            player.sendSystemMessage(Component.literal(
+                    "§7[猎人游戏] 积攒的资源抽奖已开启（剩余 " + Math.max(0, queue.size() - 1) + " 次）。"), true);
+        }
     }
 
     /** 新一轮抽奖前：上一轮未领取的奖励视为放弃（不发放）。 */
@@ -61,20 +93,28 @@ public final class PendingRewardManager {
         }
     }
 
-    /** 掉线补偿：未领取奖励直接入包（掉线非玩家主动选择）。 */
+    /** 掉线补偿：未领取奖励（含积攒的抽奖）直接入包（掉线非玩家主动选择）。 */
     public static void depositExisting(ServerPlayer player) {
         Pending pending = PENDING.remove(player.getUUID());
-        if (pending == null) {
-            return;
+        if (pending != null) {
+            for (ItemStack stack : pending.remaining()) {
+                give(player, stack);
+            }
         }
-        for (ItemStack stack : pending.remaining()) {
-            give(player, stack);
+        List<Pending> queue = QUEUED.remove(player.getUUID());
+        if (queue != null) {
+            for (Pending p : queue) {
+                for (ItemStack stack : p.remaining()) {
+                    give(player, stack);
+                }
+            }
         }
     }
 
     /** 逃生者淘汰：奖励作废（不入包）。 */
     public static void discard(UUID id) {
         PENDING.remove(id);
+        QUEUED.remove(id);
     }
 
     /** 游戏结束：在线参与者全部强制入包。 */
@@ -87,7 +127,18 @@ public final class PendingRewardManager {
                 }
             }
         }
+        for (Map.Entry<UUID, List<Pending>> e : QUEUED.entrySet()) {
+            ServerPlayer p = server.getPlayerList().getPlayer(e.getKey());
+            if (p != null) {
+                for (Pending pending : e.getValue()) {
+                    for (ItemStack stack : pending.remaining()) {
+                        give(p, stack);
+                    }
+                }
+            }
+        }
         PENDING.clear();
+        QUEUED.clear();
     }
 
     public static boolean hasPending(UUID id) {

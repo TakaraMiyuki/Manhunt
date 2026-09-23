@@ -27,7 +27,9 @@ public final class GameConfig {
     /** 单刻水平位移超过该值（格）不计里程（防传送/坠落刷里程）。 */
     public static final double MILEAGE_MAX_TICK_DIST = 10.0;
     /** 猎人里程获取效率（相对逃生者的倍率）。 */
-    public static final double HUNTER_MILEAGE_FACTOR = 1.0 / 3.0;
+    public static final double HUNTER_MILEAGE_FACTOR = 1.0 / 2.0;
+    /** 士气增长后，士气量表接管猎人经验条的持续时间（刻）。 */
+    public static final int MORALE_METER_SHOW_TICKS = 100;
 
     // ==================== 技能卡 ====================
     /** 抽卡权重：普通/稀有/黑卡/彩卡（合计任意，按比例分配）。 */

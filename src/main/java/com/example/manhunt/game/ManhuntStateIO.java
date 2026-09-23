@@ -47,6 +47,9 @@ public final class ManhuntStateIO {
             if (ManhuntGame.rawLastCheckpoint() != null) {
                 root.add("lastCheckpoint", encodePos(ManhuntGame.rawLastCheckpoint()));
             }
+            if (ManhuntGame.strongholdPortalPos() != null) {
+                root.add("portal", encodePos(ManhuntGame.strongholdPortalPos().pos()));
+            }
             root.add("mileage", longMap(MileageManager.snapshotMileage()));
             root.add("rollCount", intMap(MileageManager.snapshotRolls()));
             root.addProperty("morale", MoraleManager.morale());
@@ -87,6 +90,10 @@ public final class ManhuntStateIO {
 
             ManhuntGame.restoreState(restored, hunters, runners, eliminated, activated,
                 current, stronghold, last, solo);
+            if (root.has("portal")) {
+                ManhuntGame.setStrongholdPortalPos(net.minecraft.core.GlobalPos.of(
+                    net.minecraft.world.level.Level.OVERWORLD, decodePos(root.getAsJsonObject("portal"))));
+            }
 
             Map<UUID, Long> mileage = new HashMap<>();
             if (root.has("mileage")) {

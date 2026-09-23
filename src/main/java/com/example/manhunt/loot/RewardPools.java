@@ -79,15 +79,19 @@ public final class RewardPools {
         }
     }
 
-    /** 固定药水。 */
-    public record PotionItem(Holder<Potion> potion, int weight) implements Entry {
+    /** 固定药水（可指定瓶型：POTION / SPLASH_POTION / LINGERING_POTION）。 */
+    public record PotionItem(Item item, Holder<Potion> potion, int weight) implements Entry {
+        public PotionItem(Holder<Potion> potion, int weight) {
+            this(Items.POTION, potion, weight);
+        }
+
         public PotionItem(Holder<Potion> potion) {
-            this(potion, 1);
+            this(Items.POTION, potion, 1);
         }
 
         @Override
         public ItemStack roll(HolderLookup.Provider registries) {
-            ItemStack stack = new ItemStack(Items.POTION);
+            ItemStack stack = new ItemStack(item);
             stack.set(DataComponents.POTION_CONTENTS, new PotionContents(potion));
             return stack;
         }
@@ -96,16 +100,16 @@ public final class RewardPools {
     // ==================== 四档奖池（食物/消耗品为主，装备低权重） ====================
 
     private static final List<Entry> TIER_1 = List.of(
-        // 食物（主力）
-        new Simple(Items.BREAD, 3, 6, 3), new Simple(Items.COOKIE, 4, 8, 3),
+        // 食物（主力，堆叠不超过 6）
+        new Simple(Items.BREAD, 3, 6, 3), new Simple(Items.COOKIE, 2, 6, 3),
         new Simple(Items.CARROT, 3, 6, 3), new Simple(Items.POTATO, 3, 6, 3),
         new Simple(Items.BAKED_POTATO, 3, 6, 2), new Simple(Items.APPLE, 2, 4, 2),
-        new Simple(Items.MELON_SLICE, 4, 8, 2), new Simple(Items.SWEET_BERRIES, 3, 6, 2),
+        new Simple(Items.MELON_SLICE, 2, 6, 2), new Simple(Items.SWEET_BERRIES, 3, 6, 2),
         new Simple(Items.COOKED_COD, 2, 4, 2), new Simple(Items.PUMPKIN_PIE, 1, 2, 1),
         new Simple(Items.WHEAT_SEEDS, 2, 6, 2), new Simple(Items.BEEF, 2, 4, 2),
         new Simple(Items.PORKCHOP, 2, 4, 2), new Simple(Items.CHICKEN, 2, 4, 2),
         new Simple(Items.BROWN_MUSHROOM, 2, 4, 2), new Simple(Items.RED_MUSHROOM, 2, 4, 2),
-        new Simple(Items.DRIED_KELP, 4, 8, 2), new Simple(Items.BEETROOT, 3, 6, 2),
+        new Simple(Items.DRIED_KELP, 2, 6, 2), new Simple(Items.BEETROOT, 3, 6, 2),
         new Simple(Items.WHEAT, 2, 5, 2), new Simple(Items.PUMPKIN, 1, 2, 1),
         // 合成材料
         new Simple(Items.OAK_LOG, 4, 8, 3), new Simple(Items.SPRUCE_LOG, 4, 8, 2),
@@ -129,25 +133,26 @@ public final class RewardPools {
         new Simple(Items.SPIDER_EYE, 1, 3, 1), new Simple(Items.DYE.red(), 2, 4, 1),
         new Simple(Items.DYE.yellow(), 2, 4, 1), new Simple(Items.DYE.blue(), 2, 4, 1),
         new Simple(Items.ROTTEN_FLESH, 2, 6, 1),
-        // 装备（低权重）
+        // 装备（低权重）——每档都有一张弓
         new Simple(Items.WOODEN_PICKAXE, 1, 1, 1), new Simple(Items.WOODEN_SWORD, 1, 1, 1),
         new Simple(Items.STONE_SWORD, 1, 1, 1), new Simple(Items.STONE_SHOVEL, 1, 1, 1),
         new Simple(Items.STONE_AXE, 1, 1, 1), new Simple(Items.LEATHER_HELMET, 1, 1, 1),
         new Simple(Items.LEATHER_CHESTPLATE, 1, 1, 1), new Simple(Items.LEATHER_LEGGINGS, 1, 1, 1),
-        new Simple(Items.LEATHER_BOOTS, 1, 1, 1));
+        new Simple(Items.LEATHER_BOOTS, 1, 1, 1), new Simple(Items.BOW, 1, 1, 1),
+        new Simple(Items.ARROW, 4, 8, 1));
 
     private static final List<Entry> TIER_2 = List.of(
-        // 食物（主力）
-        new Simple(Items.BREAD, 4, 8, 3), new Simple(Items.COOKED_BEEF, 3, 6, 3),
+        // 食物（主力，堆叠不超过 6）
+        new Simple(Items.BREAD, 2, 6, 3), new Simple(Items.COOKED_BEEF, 3, 6, 3),
         new Simple(Items.COOKED_PORKCHOP, 3, 6, 2), new Simple(Items.COOKED_CHICKEN, 3, 6, 2),
         new Simple(Items.COOKED_SALMON, 3, 6, 2), new Simple(Items.GOLDEN_CARROT, 1, 2, 2),
-        new Simple(Items.BAKED_POTATO, 4, 8, 2), new Simple(Items.COOKED_MUTTON, 3, 6, 2),
+        new Simple(Items.BAKED_POTATO, 2, 6, 2), new Simple(Items.COOKED_MUTTON, 3, 6, 2),
         new Simple(Items.RABBIT, 2, 4, 1), new Simple(Items.TROPICAL_FISH, 1, 2, 1),
         new Simple(Items.SUSPICIOUS_STEW, 1, 1, 1), new Simple(Items.DRIED_KELP_BLOCK, 1, 2, 1),
         new Simple(Items.PUMPKIN_PIE, 1, 2, 2),
-        // 合成材料/消耗品
-        new Simple(Items.IRON_INGOT, 2, 5, 3), new Simple(Items.COPPER_INGOT, 4, 8, 3),
-        new Simple(Items.GOLD_INGOT, 1, 4, 2), new Simple(Items.COAL, 6, 12, 2),
+        // 合成材料/消耗品（装备材料权重提升）
+        new Simple(Items.IRON_INGOT, 2, 5, 4), new Simple(Items.COPPER_INGOT, 4, 8, 4),
+        new Simple(Items.GOLD_INGOT, 1, 4, 3), new Simple(Items.COAL, 6, 12, 2),
         new Simple(Items.REDSTONE, 2, 6, 2), new Simple(Items.LAPIS_LAZULI, 2, 6, 2),
         new Simple(Items.GUNPOWDER, 1, 4, 2), new Simple(Items.GLASS, 4, 8, 2),
         new Simple(Items.LADDER, 4, 8, 2), new Simple(Items.ARROW, 8, 16, 2),
@@ -169,24 +174,26 @@ public final class RewardPools {
         // 装备（低权重）
         new Simple(Items.BOW, 1, 1, 1), new Simple(Items.IRON_PICKAXE, 1, 1, 1),
         new Simple(Items.IRON_SWORD, 1, 1, 1), new Simple(Items.IRON_AXE, 1, 1, 1),
-        new Simple(Items.SHIELD, 1, 1, 1));
+        new Simple(Items.SHIELD, 1, 1, 1), new Simple(Items.CHAINMAIL_HELMET, 1, 1, 1));
 
     private static final List<Entry> TIER_3 = List.of(
         // 附魔书（权重提升：合计 8）
         new EnchantedBook(3, 4), new EnchantedBook(3, 4),
-        // 食物（主力）
-        new Simple(Items.COOKED_BEEF, 4, 8, 3), new Simple(Items.COOKED_PORKCHOP, 4, 8, 2),
-        new Simple(Items.BREAD, 6, 12, 2), new Simple(Items.GOLDEN_CARROT, 2, 4, 2),
-        new Simple(Items.COOKED_MUTTON, 4, 8, 2), new Simple(Items.COOKED_RABBIT, 3, 6, 2),
+        // 食物（主力，堆叠不超过 6）
+        new Simple(Items.COOKED_BEEF, 3, 6, 3), new Simple(Items.COOKED_PORKCHOP, 2, 6, 2),
+        new Simple(Items.BREAD, 3, 6, 2), new Simple(Items.GOLDEN_CARROT, 2, 4, 2),
+        new Simple(Items.COOKED_MUTTON, 3, 6, 2), new Simple(Items.COOKED_RABBIT, 3, 6, 2),
         new Simple(Items.CAKE, 1, 1, 1),
-        // 合成材料/消耗品
-        new Simple(Items.DIAMOND, 1, 2, 2), new Simple(Items.EMERALD, 2, 5, 2),
+        // 合成材料/消耗品（装备材料权重提升）
+        new Simple(Items.DIAMOND, 1, 2, 3), new Simple(Items.EMERALD, 2, 5, 3),
         new Simple(Items.IRON_BLOCK, 1, 2, 2), new Simple(Items.OBSIDIAN, 2, 6, 2),
         new Simple(Items.EXPERIENCE_BOTTLE, 4, 8, 3), new Simple(Items.AMETHYST_SHARD, 1, 3, 2),
-        new Simple(Items.ENDER_PEARL, 1, 2, 2), new Simple(Items.ARROW, 16, 32, 2),
+        new Simple(Items.ENDER_PEARL, 1, 1, 2), new Simple(Items.ARROW, 16, 32, 2),
         new Simple(Items.GOLDEN_APPLE, 1, 1, 1), new Simple(Items.RAW_IRON, 2, 4, 2),
         new Simple(Items.RAW_GOLD, 1, 3, 2), new Simple(Items.RAW_COPPER, 3, 6, 2),
         new Simple(Items.CHARCOAL, 4, 8, 2), new Simple(Items.IRON_NUGGET, 6, 12, 2),
+        new PotionItem(Items.SPLASH_POTION, Potions.STRONG_HARMING, 1),
+        new PotionItem(Potions.STRONG_REGENERATION, 1),
         // 实用道具
         new Simple(Items.ANVIL, 1, 1, 1), new Simple(Items.SADDLE, 1, 1, 1),
         new Simple(Items.NAME_TAG, 1, 1, 1), new Simple(Items.PRISMARINE_SHARD, 2, 6, 2),
@@ -196,22 +203,26 @@ public final class RewardPools {
         new Simple(Items.IRON_CHESTPLATE, 1, 1, 1), new Simple(Items.IRON_LEGGINGS, 1, 1, 1),
         new Simple(Items.IRON_HELMET, 1, 1, 1), new Simple(Items.IRON_BOOTS, 1, 1, 1),
         new Simple(Items.IRON_SWORD, 1, 1, 1), new Simple(Items.BOW, 1, 1, 1),
-        new Simple(Items.SHIELD, 1, 1, 1));
+        new Simple(Items.SHIELD, 1, 1, 1), new Simple(Items.TURTLE_HELMET, 1, 1, 1),
+        new Simple(Items.CHAINMAIL_CHESTPLATE, 1, 1, 1), new Simple(Items.CHAINMAIL_LEGGINGS, 1, 1, 1),
+        new Simple(Items.CHAINMAIL_BOOTS, 1, 1, 1));
 
     private static final List<Entry> TIER_4 = List.of(
         // 高级（满级）附魔书（权重提升：合计 6）
         new AdvancedBook(3), new AdvancedBook(3),
         // 末地攻略物资
-        new Simple(Items.ENDER_EYE, 3, 6, 3), new Simple(Items.ENDER_PEARL, 2, 4, 2),
+        new Simple(Items.ENDER_EYE, 3, 6, 3), new Simple(Items.ENDER_PEARL, 1, 1, 2),
         new Simple(Items.ELYTRA, 1, 1, 1), new Simple(Items.ARROW, 32, 64, 2),
         new PotionItem(Potions.STRONG_STRENGTH, 2), new PotionItem(Potions.LONG_FIRE_RESISTANCE, 2),
-        new PotionItem(Potions.LONG_SWIFTNESS, 2),
+        new PotionItem(Potions.LONG_SWIFTNESS, 2), new PotionItem(Potions.STRONG_SWIFTNESS, 1),
+        new PotionItem(Potions.LONG_NIGHT_VISION, 1),
+        new PotionItem(Items.SPLASH_POTION, Potions.STRONG_SLOWNESS, 1),
         // 食物
-        new Simple(Items.GOLDEN_APPLE, 1, 2, 2), new Simple(Items.COOKED_BEEF, 6, 12, 2),
+        new Simple(Items.GOLDEN_APPLE, 1, 2, 2), new Simple(Items.COOKED_BEEF, 3, 6, 2),
         new Simple(Items.ENCHANTED_GOLDEN_APPLE, 1, 1, 1),
         new Simple(Items.GLOW_BERRIES, 4, 8, 2), new Simple(Items.CHORUS_FRUIT, 2, 4, 2),
         // 合成材料/消耗品
-        new Simple(Items.DIAMOND, 2, 4, 2), new Simple(Items.EXPERIENCE_BOTTLE, 8, 16, 2),
+        new Simple(Items.DIAMOND, 2, 4, 3), new Simple(Items.EXPERIENCE_BOTTLE, 8, 16, 2),
         new Simple(Items.PHANTOM_MEMBRANE, 2, 4, 2), new Simple(Items.NETHERITE_SCRAP, 1, 1, 1),
         new Simple(Items.ECHO_SHARD, 1, 2, 1), new Simple(Items.EMERALD_BLOCK, 1, 1, 1),
         // 实用道具
@@ -222,7 +233,10 @@ public final class RewardPools {
         new Simple(Items.DIAMOND_HORSE_ARMOR, 1, 1, 1),
         // 装备（低权重）
         new Simple(Items.DIAMOND_SWORD, 1, 1, 1), new Simple(Items.DIAMOND_PICKAXE, 1, 1, 1),
-        new Simple(Items.DIAMOND_CHESTPLATE, 1, 1, 1), new Simple(Items.CROSSBOW, 1, 1, 1));
+        new Simple(Items.DIAMOND_CHESTPLATE, 1, 1, 1), new Simple(Items.DIAMOND_LEGGINGS, 1, 1, 1),
+        new Simple(Items.DIAMOND_HELMET, 1, 1, 1), new Simple(Items.DIAMOND_BOOTS, 1, 1, 1),
+        new Simple(Items.DIAMOND_AXE, 1, 1, 1), new Simple(Items.NETHERITE_SWORD, 1, 1, 1),
+        new Simple(Items.BOW, 1, 1, 1), new Simple(Items.CROSSBOW, 1, 1, 1));
 
     private static final List<Entry> ALL = new java.util.ArrayList<>();
 
@@ -253,9 +267,18 @@ public final class RewardPools {
         };
     }
 
-    /** 全档位合并池（超级抽奖用，不限里程）。 */
+    /** 全档位合并池。 */
     public static List<Entry> allPools() {
         return ALL;
+    }
+
+    /** 合并 tier（0~3）及以上档位的池——超级抽奖不出现低于当前里程档的物资。 */
+    public static List<Entry> poolsFrom(int tier) {
+        List<Entry> out = new java.util.ArrayList<>();
+        for (int i = Math.max(0, tier); i <= 3; i++) {
+            out.addAll(pool(i));
+        }
+        return out;
     }
 
     /** 按权重随机选取一个条目。 */

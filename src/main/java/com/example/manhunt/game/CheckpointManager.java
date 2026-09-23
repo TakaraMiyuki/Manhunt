@@ -8,6 +8,7 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Holder;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.Identifier;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -60,6 +61,19 @@ public final class CheckpointManager {
                 stronghold = findStrongholdSurface(overworld, overworld.getLevelData().getRespawnData().pos());
             }
             if (stronghold != null) {
+                // 定位末地传送门房间：检查点刷新在其正上方地表，猎人罗盘也指向此处
+                BlockPos portalRoom = findPortalRoom(overworld, stronghold);
+                if (portalRoom != null) {
+                    BlockPos above = new BlockPos(portalRoom.getX(),
+                        surfaceY(overworld, portalRoom.getX(), portalRoom.getZ()), portalRoom.getZ());
+                    ManhuntGame.setCurrentCheckpoint(above, true);
+                    ManhuntGame.setStrongholdPortalPos(
+                        net.minecraft.core.GlobalPos.of(net.minecraft.world.level.Level.OVERWORLD, portalRoom));
+                    ManhuntGame.sendToRunners(server, "§6[猎人游戏] §d要塞传送门房间已定位：检查点在其正上方，"
+                        + "坐标 " + above.getX() + ", " + above.getY() + ", " + above.getZ() + "（向下挖掘进入）");
+                    return;
+                }
+                ManhuntGame.setStrongholdPortalPos(null);
                 ManhuntGame.setCurrentCheckpoint(stronghold, true);
                 ManhuntGame.sendToRunners(server, "§6[猎人游戏] §d里程达标！下一个检查点：末地要塞（坐标 "
                     + stronghold.getX() + ", " + stronghold.getY() + ", " + stronghold.getZ()
@@ -123,12 +137,41 @@ public final class CheckpointManager {
 
     /** 定位最近的末地要塞，返回其正上方地表位置。 */
     private static BlockPos findStrongholdSurface(ServerLevel level, BlockPos from) {
-        BlockPos found = level.findNearestMapStructure(
-            STRONGHOLD_TAG, from, GameConfig.STRONGHOLD_SEARCH_RADIUS_CHUNKS, false);
+        BlockPos found = findStronghold(level, from);
         if (found == null) {
             return null;
         }
         return new BlockPos(found.getX(), surfaceY(level, found.getX(), found.getZ()), found.getZ());
+    }
+
+    /** 定位最近的末地要塞（结构原点，未取地表）。 */
+    private static BlockPos findStronghold(ServerLevel level, BlockPos from) {
+        return level.findNearestMapStructure(
+            STRONGHOLD_TAG, from, GameConfig.STRONGHOLD_SEARCH_RADIUS_CHUNKS, false);
+    }
+
+    /** 在要塞结构 piece 中查找末地传送门房间（PortalRoom）的中心位置；找不到返回 null。 */
+    private static BlockPos findPortalRoom(ServerLevel level, BlockPos strongholdPos) {
+        try {
+            var holder = level.registryAccess().lookupOrThrow(Registries.STRUCTURE)
+                .get(ResourceKey.create(Registries.STRUCTURE, Identifier.withDefaultNamespace("stronghold")));
+            if (holder.isEmpty()) {
+                return null;
+            }
+            net.minecraft.world.level.levelgen.structure.Structure target = holder.get().value();
+            var starts = level.structureManager().startsForStructure(
+                net.minecraft.world.level.ChunkPos.containing(strongholdPos), s -> s == target);
+            for (var start : starts) {
+                for (var piece : start.getPieces()) {
+                    if (piece instanceof net.minecraft.world.level.levelgen.structure.structures
+                            .StrongholdPieces.PortalRoom room) {
+                        return room.getBoundingBox().getCenter();
+                    }
+                }
+            }
+        } catch (Exception ignored) {
+        }
+        return null;
     }
 
 
@@ -163,10 +206,10 @@ public final class CheckpointManager {
     private static final java.util.Map<BlockPos, Long> GREEN_RINGS = new java.util.HashMap<>();
     /** 当前检查点粒子圈（黄色）。 */
     private static final net.minecraft.core.particles.DustParticleOptions YELLOW_RING =
-        new net.minecraft.core.particles.DustParticleOptions(0xFFD800, 1.4F);
+        new net.minecraft.core.particles.DustParticleOptions(0xFFD800, 2.4F);
     /** 激活后的绿色粒子圈。 */
     private static final net.minecraft.core.particles.DustParticleOptions GREEN_RING =
-        new net.minecraft.core.particles.DustParticleOptions(0x4CFF4C, 1.4F);
+        new net.minecraft.core.particles.DustParticleOptions(0x4CFF4C, 2.4F);
 
     private static long gameTime(MinecraftServer server) {
         return server.overworld().getGameTime();
@@ -197,13 +240,17 @@ public final class CheckpointManager {
 
     private static void drawRing(ServerLevel level, BlockPos pos, net.minecraft.core.particles.DustParticleOptions dust) {
         double cx = pos.getX() + 0.5, cy = pos.getY() + 0.8, cz = pos.getZ() + 0.5;
-        int points = 14;
+        double radius = GameConfig.CHECKPOINT_ACTIVATE_RADIUS; // 与实际触发范围一致
+        int points = 20;
         for (int i = 0; i < points; i++) {
             double angle = Math.PI * 2 * i / points;
-            for (ServerPlayer p : level.players()) {
-                level.sendParticles(p, dust, true, false,
-                    cx + Math.cos(angle) * 2.2, cy, cz + Math.sin(angle) * 2.2,
-                    1, 0.0, 0.05, 0.0, 0.0);
+            for (int h = 0; h < 2; h++) {
+                double py = cy + h * 1.0;
+                for (ServerPlayer p : level.players()) {
+                    level.sendParticles(p, dust, true, false,
+                        cx + Math.cos(angle) * radius, py, cz + Math.sin(angle) * radius,
+                        1, 0.0, 0.02, 0.0, 0.0);
+                }
             }
         }
     }

@@ -51,6 +51,7 @@ public final class TeamUtil {
         if (!ManhuntGame.isParticipant(p.getUUID())) {
             return;
         }
+        applySwimSpeed(p);
         applyBaseAttributes(p);
         // 时长大于刷新间隔，ambient=true 不显示粒子
         int dur = GameConfig.BUFF_REFRESH_INTERVAL_TICKS * 3;
@@ -91,6 +92,19 @@ public final class TeamUtil {
         p.removeEffect(MobEffects.WEAKNESS);
     }
 
+    private static final net.minecraft.resources.Identifier SWIM_ID =
+        net.minecraft.resources.Identifier.fromNamespaceAndPath("manhunt", "swim_speed");
+
+    /** 全体参与者的游泳速度等同于深海探索者 III（水下移速不受惩罚）。 */
+    private static void applySwimSpeed(ServerPlayer p) {
+        var swim = p.getAttribute(Attributes.WATER_MOVEMENT_EFFICIENCY);
+        if (swim != null) {
+            swim.removeModifier(SWIM_ID);
+            swim.addPermanentModifier(new net.minecraft.world.entity.ai.attributes.AttributeModifier(
+                SWIM_ID, 1.0, net.minecraft.world.entity.ai.attributes.AttributeModifier.Operation.ADD_VALUE));
+        }
+    }
+
     /** 开局补满全部状态：灭火、清效果、满血、满饥饿与饱和。 */
     public static void fullyRestore(ServerPlayer p) {
         p.clearFire();
@@ -119,6 +133,10 @@ public final class TeamUtil {
         var attr = p.getAttribute(Attributes.MAX_HEALTH);
         if (attr != null) {
             attr.setBaseValue(20.0);
+        }
+        var swim = p.getAttribute(Attributes.WATER_MOVEMENT_EFFICIENCY);
+        if (swim != null) {
+            swim.removeModifier(SWIM_ID);
         }
         p.removeAllEffects();
         p.setHealth(p.getMaxHealth());
