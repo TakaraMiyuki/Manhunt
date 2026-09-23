@@ -140,7 +140,7 @@ function hairline(slide, x, y, w) {
     ["里程抽奖", "每移动 1 格积 1 里程，每 200 格触发一次五连抽奖"],
     ["要塞指引", "任一逃生者里程达 3000，下一检查点固定为末地要塞"],
     ["末地强化", "抗性 2 / 速度 / 跳跃提升 2 / 饱和 / 急迫 2，里程停算"],
-    ["击杀末影龙", "要塞激活后全队收获鞘翅与末影之眼，屠龙即胜"],
+    ["击杀末影龙", "要塞激活后全队获得末影之眼 ×12，开启传送门，屠龙即胜"],
   ];
   const cw = 3.95, ch = 2.1, gx = 0.19, gy = 0.3, x0 = M, y0 = 1.75;
   steps.forEach(([h, d], i) => {
@@ -201,7 +201,7 @@ function hairline(slide, x, y, w) {
   s.addText([
     { text: "下一个检查点固定刷新在末地要塞正上方", options: { bullet: { code: "25B8", indent: 10 }, breakLine: true } },
     { text: "要塞检查点必定抽到彩卡", options: { bullet: { code: "25B8", indent: 10 }, breakLine: true } },
-    { text: "全队获得鞘翅 ×1 + 末影之眼 ×12", options: { bullet: { code: "25B8", indent: 10 }, breakLine: true } },
+    { text: "全队获得末影之眼 ×12，开启传送门", options: { bullet: { code: "25B8", indent: 10 }, breakLine: true } },
     { text: "要塞入口在地下，激活后进入杀龙阶段", options: { bullet: { code: "25B8", indent: 10 } } },
   ], { x: 7.62, y: 2.55, w: 4.95, h: 2.6, fontSize: 12.5, color: TEXT, fontFace: F, paraSpaceAfter: 10, margin: 0, valign: "top" });
 
