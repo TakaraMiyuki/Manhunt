@@ -43,12 +43,17 @@ public final class ManhuntClient {
     public static final KeyMapping LOOT_CLAIM = new KeyMapping(
         "key.manhunt.loot_claim", KeyConflictContext.IN_GAME,
         InputConstants.Type.MOUSE, GLFW.GLFW_MOUSE_BUTTON_RIGHT, LOOT_CATEGORY);
+    /** 打开 3×3 便携合成（默认 G 键，可改键）。 */
+    public static final KeyMapping PORTABLE_CRAFTING = new KeyMapping(
+        "key.manhunt.crafting", KeyConflictContext.IN_GAME,
+        InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_G, LOOT_CATEGORY);
 
     @SubscribeEvent
     public static void onRegisterKeyMappings(RegisterKeyMappingsEvent event) {
         event.registerCategory(LOOT_CATEGORY);
         event.register(LOOT_MARK);
         event.register(LOOT_CLAIM);
+        event.register(PORTABLE_CRAFTING);
     }
 
     @SubscribeEvent
@@ -152,6 +157,10 @@ public final class ManhuntClient {
     @SubscribeEvent
     public static void onClientTick(ClientTickEvent.Post event) {
         ClientRollManager.tick();
+        while (PORTABLE_CRAFTING.consumeClick()) {
+            net.neoforged.neoforge.client.network.ClientPacketDistributor.sendToServer(
+                new com.example.manhunt.net.OpenCraftingPayload());
+        }
     }
 
     // ==================== 领取模式输入 ====================

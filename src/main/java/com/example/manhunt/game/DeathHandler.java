@@ -122,10 +122,19 @@ public final class DeathHandler {
 
     // ==================== 伤害规则 ====================
 
-    /** 逃跑倒计时期间猎人无法伤害逃生者；末影龙与末影人始终无法伤害猎人。 */
+    /** 逃跑倒计时期间猎人无法伤害逃生者；末影龙与末影人始终无法伤害猎人；
+     *  参与者不会摔死——摔落伤害最多扣到保留 1 颗心。 */
     public static void onIncomingDamage(LivingIncomingDamageEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer victim)) {
             return;
+        }
+        if (ManhuntGame.isRunning() && ManhuntGame.isParticipant(victim.getUUID())
+                && event.getSource().is(net.minecraft.world.damagesource.DamageTypes.FALL)) {
+            float keep = com.example.manhunt.GameConfig.FALL_MIN_HEALTH;
+            float health = victim.getHealth();
+            if (event.getAmount() >= health - keep) {
+                event.setAmount(Math.max(0.0F, health - keep));
+            }
         }
         if (TeamUtil.isHunter(victim) && ManhuntGame.isRunning() && isEndMobDamage(event.getSource())) {
             event.setCanceled(true);

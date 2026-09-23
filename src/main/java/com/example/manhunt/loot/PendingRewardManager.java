@@ -24,9 +24,8 @@ public final class PendingRewardManager {
     private record Pending(int type, List<ItemStack> remaining) {}
 
     private static final Map<UUID, Pending> PENDING = new HashMap<>();
-    /** 超级抽奖进行中积攒的普通资源抽奖（超级结束后依次开启，上限 6 次）。 */
-    private static final Map<UUID, List<Pending>> QUEUED = new HashMap<>();
-    private static final int MAX_QUEUED = 6;
+    /** 超级抽奖进行中积攒的普通资源抽奖（仅保存最近一次，新的覆盖旧的）。 */
+    private static final Map<UUID, Pending> QUEUED = new HashMap<>();
 
     /** 开启一轮新的待领取（若上一轮未领取完则视为放弃）。 */
     public static void start(ServerPlayer player, int type, List<ItemStack> items) {
@@ -37,16 +36,9 @@ public final class PendingRewardManager {
         Pending existing = PENDING.get(player.getUUID());
         if (existing != null && existing.type() == LootRollPayload.TYPE_SUPER
                 && type == LootRollPayload.TYPE_RESOURCE) {
-            List<Pending> queue = QUEUED.computeIfAbsent(player.getUUID(), k -> new ArrayList<>());
-            if (queue.size() < MAX_QUEUED) {
-                queue.add(new Pending(type, new ArrayList<>(items)));
-                player.sendSystemMessage(Component.literal(
-                        "§7[猎人游戏] 超级抽奖进行中，本次资源抽奖已积攒（"
-                            + queue.size() + "/" + MAX_QUEUED + "）。"), true);
-            } else {
-                player.sendSystemMessage(Component.literal(
-                        "§7[猎人游戏] 积攒已满，本次资源抽奖已放弃。"), true);
-            }
+            QUEUED.put(player.getUUID(), new Pending(type, new ArrayList<>(items)));
+            player.sendSystemMessage(Component.literal(
+                    "§7[猎人游戏] 超级抽奖进行中，本次资源抽奖已保存。"), true);
             return;
         }
         discardExisting(player);
@@ -70,18 +62,14 @@ public final class PendingRewardManager {
         if (claimed > 0) {
             player.playSound(net.minecraft.sounds.SoundEvents.EXPERIENCE_ORB_PICKUP, 0.5F, 1.0F);
         }
-        // 超级抽奖结束：依次开启积攒的普通资源抽奖
-        List<Pending> queue = QUEUED.remove(player.getUUID());
-        if (queue != null && !queue.isEmpty()) {
-            Pending next = queue.get(0);
-            if (queue.size() > 1) {
-                QUEUED.put(player.getUUID(), new ArrayList<>(queue.subList(1, queue.size())));
-            }
-            PENDING.put(player.getUUID(), next);
-            send(player, new LootRollPayload(next.type(), next.remaining(), accentOf(next.type()),
+        // 超级抽奖结束：开启积攒的普通资源抽奖
+        Pending queued = QUEUED.remove(player.getUUID());
+        if (queued != null) {
+            PENDING.put(player.getUUID(), queued);
+            send(player, new LootRollPayload(queued.type(), queued.remaining(), accentOf(queued.type()),
                 LootRollPayload.MODE_NEW));
             player.sendSystemMessage(Component.literal(
-                    "§7[猎人游戏] 积攒的资源抽奖已开启（剩余 " + Math.max(0, queue.size() - 1) + " 次）。"), true);
+                    "§7[猎人游戏] 积攒的资源抽奖已开启。"), true);
         }
     }
 
@@ -101,12 +89,10 @@ public final class PendingRewardManager {
                 give(player, stack);
             }
         }
-        List<Pending> queue = QUEUED.remove(player.getUUID());
-        if (queue != null) {
-            for (Pending p : queue) {
-                for (ItemStack stack : p.remaining()) {
-                    give(player, stack);
-                }
+        Pending queued = QUEUED.remove(player.getUUID());
+        if (queued != null) {
+            for (ItemStack stack : queued.remaining()) {
+                give(player, stack);
             }
         }
     }
@@ -127,13 +113,11 @@ public final class PendingRewardManager {
                 }
             }
         }
-        for (Map.Entry<UUID, List<Pending>> e : QUEUED.entrySet()) {
+        for (Map.Entry<UUID, Pending> e : QUEUED.entrySet()) {
             ServerPlayer p = server.getPlayerList().getPlayer(e.getKey());
             if (p != null) {
-                for (Pending pending : e.getValue()) {
-                    for (ItemStack stack : pending.remaining()) {
-                        give(p, stack);
-                    }
+                for (ItemStack stack : e.getValue().remaining()) {
+                    give(p, stack);
                 }
             }
         }

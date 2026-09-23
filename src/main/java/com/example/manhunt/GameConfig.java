@@ -30,13 +30,15 @@ public final class GameConfig {
     public static final double HUNTER_MILEAGE_FACTOR = 1.0 / 2.0;
     /** 士气增长后，士气量表接管猎人经验条的持续时间（刻）。 */
     public static final int MORALE_METER_SHOW_TICKS = 100;
+    /** 摔落伤害的保底生命值（保留最后 2 点 = 1 颗心，不会摔死）。 */
+    public static final float FALL_MIN_HEALTH = 2.0F;
 
     // ==================== 技能卡 ====================
     /** 抽卡权重：普通/稀有/黑卡/彩卡（合计任意，按比例分配）。 */
-    public static final int CARD_WEIGHT_COMMON = 68;
-    public static final int CARD_WEIGHT_RARE = 20;
-    public static final int CARD_WEIGHT_BLACK = 10;
-    public static final int CARD_WEIGHT_RAINBOW = 2;
+    public static final int CARD_WEIGHT_COMMON = 54;
+    public static final int CARD_WEIGHT_RARE = 30;
+    public static final int CARD_WEIGHT_BLACK = 12;
+    public static final int CARD_WEIGHT_RAINBOW = 4;
     /** 技能栏固定于快捷栏最右一格（0-based）。 */
     public static final int CARD_SLOT = 8;
     /** 技能切换最短间隔（刻），防止按住左键连续切换。 */

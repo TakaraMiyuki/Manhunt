@@ -245,12 +245,9 @@ public final class ClientRollManager {
         return key.getType() == InputConstants.Type.KEYSYM && key.getValue() == keyCode;
     }
 
-    /** 领取全部标记物品并关闭界面（未标记则领取当前选中项）。 */
+    /** 右键：领取全部标记物品并关闭界面；未标记任何物品则直接退出（全部丢弃）。 */
     private static void claimMarkedAndClose() {
-        List<Integer> claim = current.marked.isEmpty()
-            ? List.of(current.selected)
-            : new ArrayList<>(current.marked);
-        sendClaim(claim);
+        sendClaim(new ArrayList<>(current.marked));
         current = null;
     }
 
@@ -358,11 +355,13 @@ public final class ClientRollManager {
                     g.fill(sx + icon + 1, barY - 1, sx + icon + 2, barY + icon + 1, mark);
                 }
                 if (i == roll.selected) {
-                    int glow = withAlpha(mixAlpha(0xFFFFFF00, pulse), alpha);
-                    g.fill(sx - 1, barY - 1, sx + icon + 1, barY, glow);
-                    g.fill(sx - 1, barY + icon, sx + icon + 1, barY + icon + 1, glow);
-                    g.fill(sx - 1, barY, sx, barY + icon, glow);
-                    g.fill(sx + icon, barY, sx + icon + 1, barY + icon, glow);
+                    // 选中框：资源抽奖为绿色（区别于超级抽奖的金色），2px 全框
+                    int sel = withAlpha(roll.type == LootRollPayload.TYPE_SUPER
+                        ? mixAlpha(0xFFFFFF00, pulse) : 0xFF3CE13C, alpha);
+                    g.fill(sx - 2, barY - 2, sx + icon + 2, barY, sel);
+                    g.fill(sx - 2, barY + icon, sx + icon + 2, barY + icon + 2, sel);
+                    g.fill(sx - 2, barY, sx, barY + icon, sel);
+                    g.fill(sx + icon, barY, sx + icon + 2, barY + icon, sel);
                 }
                 if (!roll.marked.contains(i) && i != roll.selected) {
                     g.fill(sx, barY, sx + icon, barY + icon, withAlpha(0x50000000, alpha));

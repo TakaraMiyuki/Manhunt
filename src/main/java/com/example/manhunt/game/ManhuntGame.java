@@ -192,6 +192,11 @@ public final class ManhuntGame {
         } else {
             broadcast(server, "§6[猎人游戏] §f游戏开始！§a逃生者 " + runners.size() + " 人 §7| §c猎人 " + hunters.size() + " 人");
         }
+        // 每局开始时确保末地有龙：上一局被击杀后自动重生（未击杀过则为无操作）
+        ServerLevel end = server.getLevel(Level.END);
+        if (end != null && end.getDragonFight() != null) {
+            end.getDragonFight().tryRespawn();
+        }
         ManhuntStateIO.save(server);
         return null;
     }
@@ -391,6 +396,18 @@ public final class ManhuntGame {
             if (TeamUtil.isRunner(p) && !isEliminated(p.getUUID())) {
                 com.example.manhunt.loot.LootRoller.superRoll(p);
             }
+        }
+        // 要塞检查点：保障开门物资（鞘翅 + 足量末影之眼）
+        if (isStronghold) {
+            for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+                if (TeamUtil.isRunner(p) && !isEliminated(p.getUUID())) {
+                    com.example.manhunt.util.InvUtil.safeAdd(p,
+                        new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.ELYTRA));
+                    com.example.manhunt.util.InvUtil.safeAdd(p,
+                        new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.ENDER_EYE, 12));
+                }
+            }
+            broadcast(server, "§6[猎人游戏] §d全队已获得鞘翅 ×1 + 末影之眼 ×12，开启传送门！");
         }
         if (checkpointBar != null) {
             checkpointBar.setProgress(Math.min(1.0F, activatedCount / 10.0F));
