@@ -9,6 +9,7 @@ import net.minecraft.client.DeltaTracker;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
+import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.ItemStack;
 import net.neoforged.api.distmarker.Dist;
@@ -141,6 +142,56 @@ public final class ManhuntClient {
     private static int withAlpha(int argb, float alpha) {
         int a = (int) ((argb >>> 24) * alpha);
         return (a << 24) | (argb & 0xFFFFFF);
+    }
+
+    // ==================== CoAS 滚轮一键开关 ====================
+
+    private static Class<?> coasWheelScreenClass;
+    private static boolean coasPressArmed;
+
+    private static boolean isCoasWheelScreen(Screen screen) {
+        if (coasWheelScreenClass == null) {
+            try {
+                coasWheelScreenClass = Class.forName(
+                    "com.ofekn.crafting_on_a_stick.client.CoasWheelScreen");
+            } catch (Throwable t) {
+                coasWheelScreenClass = Void.class; // 未装 CoAS
+            }
+        }
+        return coasWheelScreenClass.isInstance(screen);
+    }
+
+    private static KeyMapping coasOpenKey() {
+        for (KeyMapping km : mc().options.keyMappings) {
+            if (km.getName().equals("key.crafting_on_a_stick.open_curios")) {
+                return km;
+            }
+        }
+        return null;
+    }
+
+    private static Minecraft mc() {
+        return Minecraft.getInstance();
+    }
+
+    /** CoasWheelScreen 打开时再按开启键 → 关闭（一键开关）。 */
+    @SubscribeEvent
+    public static void onCoasToggleKey(InputEvent.Key event) {
+        if (event.getAction() != GLFW.GLFW_PRESS) {
+            return;
+        }
+        Minecraft mc = mc();
+        Screen screen = mc.gui.screen();
+        boolean coasScreen = screen != null && isCoasWheelScreen(screen);
+        if (!coasScreen) {
+            coasPressArmed = true; // 本次按下可能打开了滚轮
+            return;
+        }
+        KeyMapping openKey = coasOpenKey();
+        if (openKey != null && openKey.getKey().getValue() == event.getKey() && coasPressArmed) {
+            mc.gui.setScreen(null);
+            coasPressArmed = false;
+        }
     }
 
     @SubscribeEvent
