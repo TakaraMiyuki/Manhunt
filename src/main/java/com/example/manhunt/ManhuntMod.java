@@ -171,6 +171,16 @@ public final class ManhuntMod {
             com.example.manhunt.game.TierSystem.recalculate(server);
             LOGGER.info("[Manhunt][冒烟测试] 当前档位: {}",
                 com.example.manhunt.game.TierSystem.displayTier());
+
+            // CoAS+Curios 桥接诊断
+            LOGGER.info("[Manhunt][冒烟测试] CoAS 联动可用: {}",
+                com.example.manhunt.compat.CraftingOnAStickBridge.available());
+            try {
+                Class.forName("top.theillusivec4.curios.api.CuriosApi");
+                LOGGER.info("[Manhunt][冒烟测试] CuriosApi 反射路径正常");
+            } catch (Throwable t) {
+                LOGGER.error("[Manhunt][冒烟测试] CuriosApi 反射失败: {}", t.toString());
+            }
         } catch (Exception e) {
             LOGGER.error("[Manhunt][冒烟测试] 失败", e);
         }
