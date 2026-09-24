@@ -246,10 +246,13 @@ public final class CheckpointManager {
             double angle = Math.PI * 2 * i / points;
             for (int h = 0; h < 2; h++) {
                 double py = cy + h * 1.0;
+                double px = cx + Math.cos(angle) * radius;
+                double pz = cz + Math.sin(angle) * radius;
                 for (ServerPlayer p : level.players()) {
-                    level.sendParticles(p, dust, true, false,
-                        cx + Math.cos(angle) * radius, py, cz + Math.sin(angle) * radius,
-                        1, 0.0, 0.02, 0.0, 0.0);
+                    level.sendParticles(p, dust, true, false, px, py, pz, 1, 0.0, 0.02, 0.0, 0.0);
+                    // 发光粒子叠加：荧光 squid 粒子全亮度渲染，圈呈发光效果
+                    level.sendParticles(p, net.minecraft.core.particles.ParticleTypes.GLOW,
+                        true, false, px, py, pz, 1, 0.0, 0.02, 0.0, 0.0);
                 }
             }
         }

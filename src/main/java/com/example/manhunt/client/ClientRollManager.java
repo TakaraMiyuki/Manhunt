@@ -348,11 +348,13 @@ public final class ClientRollManager {
             if (roll.claimMode) {
                 // 已标记：金色常驻边框；选中：白色细框游标；其余：微暗
                 if (roll.marked.contains(i)) {
-                    int mark = withAlpha(0xFFFFC844, alpha);
-                    g.fill(sx - 2, barY - 2, sx + icon + 2, barY - 1, mark);
-                    g.fill(sx - 2, barY + icon + 1, sx + icon + 2, barY + icon + 2, mark);
-                    g.fill(sx - 2, barY - 1, sx - 1, barY + icon + 1, mark);
-                    g.fill(sx + icon + 1, barY - 1, sx + icon + 2, barY + icon + 1, mark);
+                    // 标记框：2px 全框，颜色随抽奖类型（资源绿 / 超级金），实心不闪烁
+                    int mark = withAlpha(roll.type == LootRollPayload.TYPE_SUPER
+                        ? 0xFFFFD700 : 0xFF3CE13C, alpha);
+                    g.fill(sx - 2, barY - 2, sx + icon + 2, barY, mark);
+                    g.fill(sx - 2, barY + icon, sx + icon + 2, barY + icon + 2, mark);
+                    g.fill(sx - 2, barY, sx, barY + icon, mark);
+                    g.fill(sx + icon, barY, sx + icon + 2, barY + icon, mark);
                 }
                 if (i == roll.selected) {
                     // 选中框：资源抽奖为绿色（区别于超级抽奖的金色），2px 全框

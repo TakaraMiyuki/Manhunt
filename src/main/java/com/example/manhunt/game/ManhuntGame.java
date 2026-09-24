@@ -168,6 +168,7 @@ public final class ManhuntGame {
         for (ServerPlayer p : onlineParticipants(server)) {
             // 重置技能卡永久加成（赤鳞跃动等），避免跨局残留
             SkillCardsBridge.resetPersistentBonuses(p);
+            com.example.manhunt.compat.CraftingOnAStickBridge.giveStick(p);
             TeamUtil.applyBaseAttributes(p);
             TeamUtil.fullyRestore(p);
             TeamUtil.refreshBuffs(p);
