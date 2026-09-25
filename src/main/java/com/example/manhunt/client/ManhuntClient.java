@@ -116,7 +116,8 @@ public final class ManhuntClient {
             return;
         }
         if (!ManhuntClientState.isRunner()) {
-            return; // 仅逃生者显示固定技能槽
+            renderTrackingCompassBorder(g, mc, delta);
+            return; // 猎人显示追踪罗盘边框（贴近逃生者时红色脉冲）
         }
         ItemStack slot = mc.player.getInventory().getItem(8);
         boolean hasCard = com.example.manhunt.cards.SkillCardsBridge.available()
@@ -137,6 +138,46 @@ public final class ManhuntClient {
         g.fill(x - 3, y + 17, x + 19, y + 19, col);
         g.fill(x - 3, y - 1, x - 1, y + 17, col);
         g.fill(x + 17, y - 1, x + 19, y + 17, col);
+    }
+
+    /**
+     * 猎人追踪罗盘边框：罗盘所在物品栏格子常显金框；
+     * 当罗盘目标（逃生者）与猎人距离 < 50 格时变为红色快速脉冲。
+     */
+    private static void renderTrackingCompassBorder(GuiGraphicsExtractor g, Minecraft mc, DeltaTracker delta) {
+        if (mc.player == null || mc.level == null || mc.gui.hud.isHidden()) {
+            return;
+        }
+        var inv = mc.player.getInventory().getNonEquipmentItems();
+        for (int slot = 0; slot < inv.size(); slot++) {
+            ItemStack stack = inv.get(slot);
+            if (!stack.is(com.example.manhunt.item.ManhuntItems.TRACKING_COMPASS.get())) {
+                continue;
+            }
+            int x = g.guiWidth() / 2 - 90 + slot * 20 + 2;
+            int y = g.guiHeight() - 19;
+            long now = mc.level.getGameTime();
+            float t = now + delta.getGameTimeDeltaPartialTick(false);
+            boolean close = false;
+            var tracker = stack.get(net.minecraft.core.component.DataComponents.LODESTONE_TRACKER);
+            if (tracker != null && tracker.target().isPresent()
+                    && tracker.target().get().dimension() == mc.player.level().dimension()) {
+                var tpos = tracker.target().get().pos();
+                double d2 = mc.player.distanceToSqr(
+                    tpos.getX() + 0.5, tpos.getY() + 0.5, tpos.getZ() + 0.5);
+                close = d2 < 50.0 * 50.0;
+            }
+            int col;
+            if (close) {
+                col = withAlpha(0xFFE33B3B, 0.55F + 0.45F * (float) Math.abs(Math.sin(t * 0.5)));
+            } else {
+                col = withAlpha(0xFFFFC844, 0.75F);
+            }
+            g.fill(x - 3, y - 3, x + 19, y - 1, col);
+            g.fill(x - 3, y + 17, x + 19, y + 19, col);
+            g.fill(x - 3, y - 1, x - 1, y + 17, col);
+            g.fill(x + 17, y - 1, x + 19, y + 17, col);
+        }
     }
 
     private static int withAlpha(int argb, float alpha) {

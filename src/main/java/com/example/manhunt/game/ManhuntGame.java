@@ -168,7 +168,6 @@ public final class ManhuntGame {
         for (ServerPlayer p : onlineParticipants(server)) {
             // 重置技能卡永久加成（赤鳞跃动等），避免跨局残留
             SkillCardsBridge.resetPersistentBonuses(p);
-            com.example.manhunt.compat.CraftingOnAStickBridge.giveStick(p);
             TeamUtil.applyBaseAttributes(p);
             TeamUtil.fullyRestore(p);
             TeamUtil.refreshBuffs(p);
@@ -309,6 +308,7 @@ public final class ManhuntGame {
                     new com.example.manhunt.net.ManhuntRolePayload(participant, runner, skillReady,
                         MoraleManager.morale(), MoraleManager.rewards()));
                 if (participant) {
+                    CompassManager.ensureCompasses(p);
                     MileageManager.syncMeter(p);
                 }
             }
@@ -402,8 +402,12 @@ public final class ManhuntGame {
         if (isStronghold) {
             for (ServerPlayer p : server.getPlayerList().getPlayers()) {
                 if (TeamUtil.isRunner(p) && !isEliminated(p.getUUID())) {
-                    com.example.manhunt.util.InvUtil.safeAdd(p,
-                        new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.ENDER_EYE, 12));
+                    var eyes = new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.ENDER_EYE, 12);
+                    if (!com.example.manhunt.util.InvUtil.safeAdd(p, eyes) && !eyes.isEmpty()) {
+                        p.drop(eyes, false); // 背包放不下：掉落在脚下并提醒
+                        p.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                            "§c[猎人游戏] 背包已满，部分末影之眼未拾取，已掉落在脚下！"), false);
+                    }
                 }
             }
             broadcast(server, "§6[猎人游戏] §d全队已获得末影之眼 ×12，开启传送门！");

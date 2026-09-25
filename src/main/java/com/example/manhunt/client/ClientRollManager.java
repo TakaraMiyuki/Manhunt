@@ -275,7 +275,7 @@ public final class ClientRollManager {
         if (mc.gui.screen() != null) {
             return false;
         }
-        // 固定备用键：←→ 选择
+        // 固定备用键：←→ 选择，↑ 标记，↓ 领取标记并退出
         if (key == GLFW.GLFW_KEY_LEFT) {
             current.selected = Math.floorMod(current.selected - 1, current.items.size());
             uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.8F, 0.15F);
@@ -284,6 +284,14 @@ public final class ClientRollManager {
         if (key == GLFW.GLFW_KEY_RIGHT) {
             current.selected = Math.floorMod(current.selected + 1, current.items.size());
             uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.8F, 0.15F);
+            return true;
+        }
+        if (key == GLFW.GLFW_KEY_UP) {
+            toggleMark(current);
+            return true;
+        }
+        if (key == GLFW.GLFW_KEY_DOWN) {
+            claimMarkedAndClose();
             return true;
         }
         return false;

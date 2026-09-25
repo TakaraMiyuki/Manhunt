@@ -68,6 +68,25 @@ public final class CompassManager {
         }
     }
 
+    /** 罗盘不可丢弃（取消抛掷，防止掉落被他人拾取）。 */
+    public static void onItemToss(net.neoforged.neoforge.event.entity.item.ItemTossEvent event) {
+        if (!ManhuntGame.isRunning()) {
+            return;
+        }
+        var player = event.getPlayer();
+        if (!ManhuntGame.isParticipant(player.getUUID())) {
+            return;
+        }
+        ItemStack tossed = event.getEntity().getItem();
+        if (tossed.is(ManhuntItems.TRACKING_COMPASS.get()) || tossed.is(ManhuntItems.CHECKPOINT_COMPASS.get())) {
+            event.setCanceled(true);
+            if (player instanceof ServerPlayer sp) {
+                sp.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                    "§7[猎人游戏] 罗盘无法丢弃。"), true);
+            }
+        }
+    }
+
     /** 按阵营补发对应罗盘（登录/复活时调用）。 */
     public static void ensureCompasses(ServerPlayer p) {
         if (TeamUtil.isHunter(p)) {
