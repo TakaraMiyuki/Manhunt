@@ -38,8 +38,18 @@ public final class GameConfig {
     public static final int MORALE_STEP_AFTER_LAST = 200;
     /** 猎人死亡后旁观等待时长（刻）——10 秒后传送至复活点。 */
     public static final int HUNTER_SPECTATE_TICKS = 200;
-    /** 猎人罗盘红脉冲的触发距离（格）。 */
+    /** 猎人罗盘金脉冲的触发距离（格）。 */
     public static final double TRACKING_COMPASS_CLOSE_DIST = 50.0;
+    /** 罗盘偏航提示：朝向偏离罗盘指向超过该角度（度）视为偏航。 */
+    public static final double COMPASS_DEVIATION_ANGLE = 60.0;
+    /** 罗盘偏航提示：持续偏航该时长（刻）后红色脉冲，修正方向解除。 */
+    public static final int COMPASS_DEVIATION_TICKS = 100;
+    /** 玩家进食加速倍率（相对原版）。 */
+    public static final double EAT_SPEED_FACTOR = 1.5;
+    /** 技能库持有上限（张，单人调试模式不限）。 */
+    public static final int SKILL_MAX_CARDS = 8;
+    /** 长按左键呼出技能轮盘的按住时长（刻）。 */
+    public static final int SKILL_WHEEL_HOLD_TICKS = 6;
     /** 同阵营伤害上限（点）。 */
     public static final float FRIENDLY_FIRE_CAP = 2.0F;
     /** 昼夜比（日:夜 = 7:3）：夜间时钟速率 = 7/3。 */

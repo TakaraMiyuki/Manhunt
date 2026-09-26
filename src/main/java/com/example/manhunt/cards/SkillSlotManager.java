@@ -36,13 +36,19 @@ public final class SkillSlotManager {
 
     // ==================== 抽卡入库 ====================
 
-    /** 发放抽到的技能卡：加入技能库，若槽位空闲则立即装备。 */
+    /** 发放抽到的技能卡：加入技能库（上限 {@code SKILL_MAX_CARDS}，单人调试不限），超出直接丢弃。 */
     public static void giveDrawnCard(ServerPlayer runner, SkillCardsBridge.CardDraw draw) {
         if (!SkillCardsBridge.available()) {
             return;
         }
         UUID id = runner.getUUID();
         List<ItemStack> cards = COLLECTION.computeIfAbsent(id, k -> new ArrayList<>());
+        if (!ManhuntGame.soloMode() && cards.size() >= GameConfig.SKILL_MAX_CARDS) {
+            runner.sendSystemMessage(Component.literal(
+                "§6[技能库] §f" + draw.stack().getHoverName().getString()
+                    + " §7已丢弃——技能库已满（" + GameConfig.SKILL_MAX_CARDS + " 张）。"), true);
+            return;
+        }
         cards.add(draw.stack().copy());
         Integer idx = ACTIVE_INDEX.get(id);
         if (idx == null || idx < 0 || idx >= cards.size()) {
@@ -51,7 +57,7 @@ public final class SkillSlotManager {
         equipActive(runner);
         runner.sendSystemMessage(Component.literal(
             "§6[技能库] §f" + draw.stack().getHoverName().getString()
-                + " §7已加入（共 " + cards.size() + " 张，左键切换）"));
+                + " §7已加入（共 " + cards.size() + " 张，左键切换 / 长按左键打开轮盘）"));
     }
 
     /** 把激活的技能卡镜像到固定槽位。 */
@@ -67,6 +73,15 @@ public final class SkillSlotManager {
     }
 
     // ==================== 切换 ====================
+
+    /** 切换/选定后的播报：卡名 + 位置 + 效果概述。 */
+    private static void announceSkill(ServerPlayer player, ItemStack card, int idx, int total) {
+        String brief = Component.translatable(
+            card.getItem().getDescriptionId() + ".brief").getString();
+        player.sendSystemMessage(Component.literal(
+            "§6[技能] §f" + card.getHoverName().getString()
+                + " §7(" + idx + "/" + total + ") §b" + brief), true);
+    }
 
     /** 左键切换到下一张技能卡（带节流）。 */
     public static void switchSkill(ServerPlayer player) {
@@ -88,9 +103,22 @@ public final class SkillSlotManager {
         int idx = (ACTIVE_INDEX.getOrDefault(player.getUUID(), 0) + 1) % cards.size();
         ACTIVE_INDEX.put(player.getUUID(), idx);
         equipActive(player);
-        player.sendSystemMessage(Component.literal(
-            "§6[技能] §f" + cards.get(idx).getHoverName().getString()
-                + " §7(" + (idx + 1) + "/" + cards.size() + ")"), true);
+        announceSkill(player, cards.get(idx), idx + 1, cards.size());
+    }
+
+    /** 技能轮盘选定某张卡（无节流，选定即切）。 */
+    public static void selectSkill(ServerPlayer player, int index) {
+        if (!SkillCardsBridge.available() || !ManhuntGame.isRunning() || !TeamUtil.isRunner(player)
+                || ManhuntGame.isEliminated(player.getUUID())) {
+            return;
+        }
+        List<ItemStack> cards = COLLECTION.get(player.getUUID());
+        if (cards == null || index < 0 || index >= cards.size()) {
+            return;
+        }
+        ACTIVE_INDEX.put(player.getUUID(), index);
+        equipActive(player);
+        announceSkill(player, cards.get(index), index + 1, cards.size());
     }
 
     // ==================== 左键拦截 ====================
@@ -223,6 +251,25 @@ public final class SkillSlotManager {
     public static boolean hasCards(UUID id) {
         List<ItemStack> cards = COLLECTION.get(id);
         return cards != null && !cards.isEmpty();
+    }
+
+    /** 技能库卡牌物品 id 列表（S2C 下发，驱动技能轮盘）。 */
+    public static List<String> skillIdList(ServerPlayer player) {
+        List<String> ids = new ArrayList<>();
+        List<ItemStack> cards = COLLECTION.get(player.getUUID());
+        if (cards != null) {
+            for (ItemStack stack : cards) {
+                ids.add(net.minecraft.core.registries.BuiltInRegistries.ITEM
+                    .getKey(stack.getItem()).toString());
+            }
+        }
+        return ids;
+    }
+
+    /** 当前激活下标（无卡返回 -1）。 */
+    public static int activeIndex(ServerPlayer player) {
+        Integer idx = ACTIVE_INDEX.get(player.getUUID());
+        return idx == null ? -1 : idx;
     }
 
     public static int cardCount(UUID id) {

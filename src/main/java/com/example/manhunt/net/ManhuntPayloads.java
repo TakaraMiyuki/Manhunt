@@ -32,6 +32,14 @@ public final class ManhuntPayloads {
                     SkillSlotManager.switchSkill(player);
                 }
             });
+        // 技能轮盘选定
+        registrar.playToServer(com.example.manhunt.net.SkillSelectPayload.TYPE,
+            com.example.manhunt.net.SkillSelectPayload.STREAM_CODEC,
+            (payload, ctx) -> {
+                if (ctx.player() instanceof net.minecraft.server.level.ServerPlayer player) {
+                    SkillSlotManager.selectSkill(player, payload.index());
+                }
+            });
 
     }
 }

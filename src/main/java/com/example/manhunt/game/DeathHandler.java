@@ -222,9 +222,25 @@ public final class DeathHandler {
         }
     }
 
+    /** 对局中参与者的进食/饮用速度加快（EAT_SPEED_FACTOR 倍）。 */
+    public static void onUseItemStart(net.neoforged.neoforge.event.entity.living.LivingEntityUseItemEvent.Start event) {
+        if (!(event.getEntity() instanceof ServerPlayer player)
+                || !ManhuntGame.isRunning()
+                || !ManhuntGame.isParticipant(player.getUUID())) {
+            return;
+        }
+        if (event.getItem().getUseAnimation() != net.minecraft.world.item.ItemUseAnimation.EAT
+                && event.getItem().getUseAnimation() != net.minecraft.world.item.ItemUseAnimation.DRINK) {
+            return;
+        }
+        int fast = (int) Math.ceil(event.getDuration() / com.example.manhunt.GameConfig.EAT_SPEED_FACTOR);
+        if (fast > 0 && fast < event.getDuration()) {
+            event.setDuration(fast);
+        }
+    }
+
     /** 末影人不再以猎人为目标。 */
-    public static void onChangeTarget(LivingChangeTargetEvent event) {
-        if (!(event.getEntity() instanceof EnderMan)
+    public static void onChangeTarget(LivingChangeTargetEvent event) {        if (!(event.getEntity() instanceof EnderMan)
                 || !(event.getNewAboutToBeSetTarget() instanceof ServerPlayer target)) {
             return;
         }

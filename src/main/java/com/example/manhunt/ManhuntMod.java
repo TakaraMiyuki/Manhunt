@@ -59,6 +59,8 @@ public final class ManhuntMod {
         NeoForge.EVENT_BUS.addListener(CompassManager::onRightClick);
         NeoForge.EVENT_BUS.addListener(CompassManager::onItemToss);
         NeoForge.EVENT_BUS.addListener(ManhuntMod::onLoggedOut);
+        // 对局中参与者进食/饮用加速
+        NeoForge.EVENT_BUS.addListener(DeathHandler::onUseItemStart);
         // 经验球不再跟随参与者（配合 PickupXp 取消，防止经验球环绕无法吸收）
         NeoForge.EVENT_BUS.addListener(ManhuntMod::onXpOrbTargeting);
         // 技能栏：左键切换（打方块/打实体双侧取消并切换，挥空由客户端发包）

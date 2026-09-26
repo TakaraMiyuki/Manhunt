@@ -1,5 +1,8 @@
 package com.example.manhunt.net;
 
+import java.util.ArrayList;
+import java.util.List;
+
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
@@ -10,10 +13,12 @@ import net.minecraft.resources.Identifier;
  * S2C：玩家在当前对局中的角色标记（每秒随量表同步下发）。
  * skillReady = 技能库中存在任一冷却完毕的卡（驱动技能槽脉冲边框）。
  * morale/moraleRewards = 猎人全队士气与已达成档数（驱动屏幕上方的士气条 UI）。
- * 客户端据此决定是否显示技能槽边框等本地 UI。
+ * skillIds/skillActive = 技能库全部卡牌物品 id 与激活下标（驱动技能轮盘）。
+ * 客户端据此决定是否显示技能槽边框、技能轮盘等本地 UI。
  */
 public record ManhuntRolePayload(boolean participant, boolean runner, boolean skillReady,
-                                 int morale, int moraleRewards) implements CustomPacketPayload {
+                                 int morale, int moraleRewards,
+                                 List<String> skillIds, int skillActive) implements CustomPacketPayload {
     public static final CustomPacketPayload.Type<ManhuntRolePayload> TYPE =
         new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath("manhunt", "role"));
 
@@ -25,13 +30,27 @@ public record ManhuntRolePayload(boolean participant, boolean runner, boolean sk
             ByteBufCodecs.BOOL.encode(buf, payload.skillReady());
             ByteBufCodecs.VAR_INT.encode(buf, payload.morale());
             ByteBufCodecs.VAR_INT.encode(buf, payload.moraleRewards());
+            ByteBufCodecs.VAR_INT.encode(buf, payload.skillIds().size());
+            for (String id : payload.skillIds()) {
+                ByteBufCodecs.STRING_UTF8.encode(buf, id);
+            }
+            ByteBufCodecs.VAR_INT.encode(buf, payload.skillActive());
         },
-        buf -> new ManhuntRolePayload(
-            ByteBufCodecs.BOOL.decode(buf),
-            ByteBufCodecs.BOOL.decode(buf),
-            ByteBufCodecs.BOOL.decode(buf),
-            ByteBufCodecs.VAR_INT.decode(buf),
-            ByteBufCodecs.VAR_INT.decode(buf)));
+        buf -> {
+            boolean participant = ByteBufCodecs.BOOL.decode(buf);
+            boolean runner = ByteBufCodecs.BOOL.decode(buf);
+            boolean skillReady = ByteBufCodecs.BOOL.decode(buf);
+            int morale = ByteBufCodecs.VAR_INT.decode(buf);
+            int moraleRewards = ByteBufCodecs.VAR_INT.decode(buf);
+            int size = ByteBufCodecs.VAR_INT.decode(buf);
+            List<String> skillIds = new ArrayList<>(size);
+            for (int i = 0; i < size; i++) {
+                skillIds.add(ByteBufCodecs.STRING_UTF8.decode(buf));
+            }
+            int skillActive = ByteBufCodecs.VAR_INT.decode(buf);
+            return new ManhuntRolePayload(participant, runner, skillReady,
+                morale, moraleRewards, skillIds, skillActive);
+        });
 
     @Override
     public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {

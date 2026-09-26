@@ -143,9 +143,16 @@ public final class ManhuntClient {
         renderCompassBorder(g, mc, delta, com.example.manhunt.item.ManhuntItems.CHECKPOINT_COMPASS.get());
     }
 
+    /** 罗盘偏航计时：方向持续偏离罗盘指向的起点（-1 = 未偏离）。 */
+    private static long compassDeviateSince = -1;
+
     /**
-     * 罗盘槽位边框：罗盘所在格子常显金框；
-     * 当罗盘目标（猎人=锁定逃生者 / 逃生者=当前检查点）距离 < 50 格时变为红色快速脉冲。
+     * 罗盘槽位边框：
+     * <ul>
+     *   <li>玩家朝向明显偏离罗盘指向（&gt;{@code COMPASS_DEVIATION_ANGLE}°）持续 5 秒 → 红色脉冲，修正方向解除；</li>
+     *   <li>距离目标（猎人=锁定逃生者 / 逃生者=当前检查点）&lt;50 格 → 金色脉冲；</li>
+     *   <li>其余：金色静态边框。</li>
+     * </ul>
      */
     private static void renderCompassBorder(GuiGraphicsExtractor g, Minecraft mc, DeltaTracker delta,
                                             net.minecraft.world.item.Item compassItem) {
@@ -163,17 +170,38 @@ public final class ManhuntClient {
             long now = mc.level.getGameTime();
             float t = now + delta.getGameTimeDeltaPartialTick(false);
             boolean close = false;
+            boolean deviated = false;
             var tracker = stack.get(net.minecraft.core.component.DataComponents.LODESTONE_TRACKER);
             if (tracker != null && tracker.target().isPresent()
                     && tracker.target().get().dimension() == mc.player.level().dimension()) {
                 var tpos = tracker.target().get().pos();
-                double d2 = mc.player.distanceToSqr(
-                    tpos.getX() + 0.5, tpos.getY() + 0.5, tpos.getZ() + 0.5);
+                double dx = tpos.getX() + 0.5 - mc.player.getX();
+                double dz = tpos.getZ() + 0.5 - mc.player.getZ();
+                double d2 = dx * dx + dz * dz;
                 close = d2 < 50.0 * 50.0;
+                // MC 偏航角：0=+Z，90=-X → 目标方位 yaw = atan2(-dx, dz)
+                double bearing = Math.toDegrees(Math.atan2(-dx, dz));
+                double diff = mc.player.getYRot() - bearing;
+                diff = ((diff + 180.0) % 360.0 + 360.0) % 360.0 - 180.0;
+                deviated = Math.abs(diff) > com.example.manhunt.GameConfig.COMPASS_DEVIATION_ANGLE;
             }
+            // 偏航计时（任一罗盘偏离即计时）
+            if (deviated) {
+                if (compassDeviateSince < 0) {
+                    compassDeviateSince = now;
+                }
+            } else {
+                compassDeviateSince = -1;
+            }
+            boolean deviatingLong = compassDeviateSince >= 0
+                && now - compassDeviateSince >= com.example.manhunt.GameConfig.COMPASS_DEVIATION_TICKS;
             int col;
-            if (close) {
+            if (deviatingLong) {
+                // 红色脉冲：方向偏移过久
                 col = withAlpha(0xFFE33B3B, 0.55F + 0.45F * (float) Math.abs(Math.sin(t * 0.5)));
+            } else if (close) {
+                // 金色脉冲：接近目标
+                col = withAlpha(0xFFFFC844, 0.55F + 0.45F * (float) Math.abs(Math.sin(t * 0.5)));
             } else {
                 col = withAlpha(0xFFFFC844, 0.75F);
             }
@@ -263,12 +291,15 @@ public final class ManhuntClient {
     public static void onRegisterClientPayloads(RegisterClientPayloadHandlersEvent event) {
         event.register(LootRollPayload.TYPE, (payload, ctx) -> ClientRollManager.start(payload));
         event.register(com.example.manhunt.net.ManhuntRolePayload.TYPE,
-            (payload, ctx) -> ManhuntClientState.update(payload.participant(), payload.runner(), payload.skillReady(), payload.morale(), payload.moraleRewards()));
+            (payload, ctx) -> ManhuntClientState.update(payload.participant(), payload.runner(),
+                payload.skillReady(), payload.morale(), payload.moraleRewards(),
+                payload.skillIds(), payload.skillActive()));
     }
 
     @SubscribeEvent
     public static void onClientTick(ClientTickEvent.Post event) {
         ClientRollManager.tick();
+        ClientSkillWheel.tick();
     }
 
     // ==================== 领取模式输入 ====================
@@ -283,6 +314,11 @@ public final class ManhuntClient {
     @SubscribeEvent
     public static void onMouseButton(InputEvent.MouseButton.Pre event) {
         if (ClientRollManager.onMouseButton(event.getButton(), event.getAction())) {
+            event.setCanceled(true);
+            return;
+        }
+        // 技能轮盘：手持技能卡长按左键呼出（短按循环切换）
+        if (ClientSkillWheel.onMouseButton(event.getButton(), event.getAction())) {
             event.setCanceled(true);
         }
     }

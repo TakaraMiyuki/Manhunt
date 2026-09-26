@@ -17,11 +17,11 @@ import net.minecraft.world.item.ItemStack;
  * 抽奖奖励待领取仓库：抽奖结果停留在客户端抽奖 UI 上，
  * 滚轮选择、方向键/中键标记、右键/↓ 领取标记物品并退出（丢弃未选中物品）。
  *
- * 优先级规则：超级抽奖优先级最高——
+ * 优先级规则：超级抽奖最高优先级——
  * <ul>
- *   <li>超级进行中触发的普通抽奖 → 积攒（仅保留最近一次，新的覆盖旧的），超级结束后自动开启；</li>
+ *   <li>超级进行中触发的普通/超级抽奖 → 保留（仅最近一次，新的覆盖旧的），超级结束后自动开启；</li>
  *   <li>普通领取中被超级顶替的普通抽奖 → 保留，超级结束后自动重新开启；</li>
- *   <li>同类型新一轮 → 旧一轮未领取奖励视为放弃。</li>
+ *   <li>同类型普通新一轮 → 旧一轮未领取奖励视为放弃。</li>
  * </ul>
  */
 public final class PendingRewardManager {
@@ -33,21 +33,38 @@ public final class PendingRewardManager {
     /** 被顶替/积攒而延迟开启的普通资源抽奖（仅一个槽位）。 */
     private static final Map<UUID, Pending> DEFERRED = new HashMap<>();
 
-    /** 开启一轮新的待领取，并按优先级处理被顶替的轮次。 */
+    /**
+     * 开启一轮新的待领取，并按优先级处理：
+     * <ul>
+     *   <li>超级抽奖最高优先级——普通进行中触发的超级立即顶替开启，被顶替的普通轮保留；</li>
+     *   <li>超级进行中触发的普通抽奖（含后来刷新的）保留在超级后面（DEFERRED 单槽，旧的按"保留一次"放弃），超级结束后自动开启；</li>
+     *   <li>超级进行中触发的超级同样排队保留，不覆盖；</li>
+     *   <li>同类型普通新一轮 → 旧一轮未领取奖励视为放弃。</li>
+     * </ul>
+     */
     public static void start(ServerPlayer player, int type, List<ItemStack> items) {
         if (items.isEmpty()) {
             return;
         }
-        Pending existing = PENDING.get(player.getUUID());
-        if (existing != null && existing.type() != type) {
-            // 异类型相遇：超级立即开启，被顶替的普通抽奖保留，超级结束后自动重启
-            DEFERRED.put(player.getUUID(), existing);
-            PENDING.remove(player.getUUID());
-        } else if (existing != null) {
+        UUID id = player.getUUID();
+        Pending existing = PENDING.get(id);
+        if (existing != null && existing.type() == type && type != LootRollPayload.TYPE_SUPER) {
+            // 同类型普通抽奖：旧轮放弃，新一轮立即开启
             player.sendSystemMessage(Component.literal(
                     "§7[猎人游戏] 上一轮抽奖的未领取奖励已放弃。"), true);
+        } else if (existing != null && existing.type() == LootRollPayload.TYPE_SUPER) {
+            // 超级进行中：新轮（普通或超级）保留到后面，不覆盖
+            DEFERRED.put(id, new Pending(type, new ArrayList<>(items)));
+            player.sendSystemMessage(Component.literal(
+                    type == LootRollPayload.TYPE_SUPER
+                        ? "§7[猎人游戏] 新一轮超级抽奖已排队，当前超级抽奖结束后自动开启。"
+                        : "§7[猎人游戏] 新的资源抽奖已保留，将在超级抽奖结束后自动开启。"), true);
+            return;
+        } else if (existing != null) {
+            // 普通进行中触发的超级：超级立即顶替开启，普通轮保留
+            DEFERRED.put(id, existing);
         }
-        PENDING.put(player.getUUID(), new Pending(type, new ArrayList<>(items)));
+        PENDING.put(id, new Pending(type, new ArrayList<>(items)));
         send(player, new LootRollPayload(type, items, accentOf(type), LootRollPayload.MODE_NEW));
     }
 

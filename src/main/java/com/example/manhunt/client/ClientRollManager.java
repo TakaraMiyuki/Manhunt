@@ -64,6 +64,8 @@ public final class ClientRollManager {
         final long startTick;
         List<ItemStack> items;
         boolean claimMode;
+        /** 左键暂时脱离：UI 变灰，滚轮/右键等恢复原版操作，中键返回。 */
+        boolean detached;
         int selected;
         /** 已标记（中键）待领取的物品索引。 */
         final java.util.Set<Integer> marked = new java.util.HashSet<>();
@@ -108,13 +110,14 @@ public final class ClientRollManager {
             return;
         }
         if (payload.mode() == LootRollPayload.MODE_REFRESH) {
-            // 领取刷新：原位更新剩余物品；空列表关闭会话
+            // 领取刷新：原位更新剩余物品；空列表关闭会话（刷新后回到界面，需重新左键脱离）
             if (current != null) {
                 if (payload.items().isEmpty()) {
                     current = null;
                 } else {
                     current.items = new ArrayList<>(payload.items());
                     current.claimMode = true;
+                    current.detached = false;
                     current.selected = Mth.clamp(current.selected, 0, current.items.size() - 1);
                 }
             }
@@ -140,6 +143,7 @@ public final class ClientRollManager {
         if (mc.level == null) {
             current = null;
             cardQueue.clear();
+            ClientSkillWheel.clear();
             return;
         }
         long now = mc.level.getGameTime();
@@ -184,6 +188,11 @@ public final class ClientRollManager {
         return current != null && current.claimMode && !current.items.isEmpty();
     }
 
+    /** 是否处于左键脱离状态（供技能轮盘等模块让出输入）。 */
+    public static boolean isDetached() {
+        return current != null && current.detached;
+    }
+
     private static void sendClaim(List<Integer> indices) {
         net.neoforged.neoforge.client.network.ClientPacketDistributor.sendToServer(
             new ClaimRewardPayload(indices));
@@ -200,9 +209,9 @@ public final class ClientRollManager {
         }
     }
 
-    /** 滚轮选择。返回 true 表示已消费。 */
+    /** 滚轮选择。返回 true 表示已消费。脱离状态下滚轮为正常视角操作。 */
     public static boolean onMouseScroll(double deltaY) {
-        if (!hasClaimSession()) {
+        if (!hasClaimSession() || current.detached) {
             return false;
         }
         Minecraft mc = Minecraft.getInstance();
@@ -224,12 +233,27 @@ public final class ClientRollManager {
         if (mc.gui.screen() != null) {
             return false;
         }
+        if (current.detached) {
+            // 脱离状态：仅中键（标记键）返回抽奖界面
+            if (matchesMouse(ManhuntClient.LOOT_MARK, button)) {
+                current.detached = false;
+                uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.2F, 0.3F);
+                return true;
+            }
+            return false; // 其余操作恢复正常
+        }
         if (matchesMouse(ManhuntClient.LOOT_MARK, button)) {
             toggleMark(current);
             return true;
         }
         if (matchesMouse(ManhuntClient.LOOT_CLAIM, button)) {
             claimMarkedAndClose();
+            return true;
+        }
+        // 左键：暂时脱离抽奖界面（不写入操作提示）
+        if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
+            current.detached = true;
+            uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 0.7F, 0.3F);
             return true;
         }
         return false;
@@ -251,9 +275,9 @@ public final class ClientRollManager {
         current = null;
     }
 
-    /** 键盘按键（在原版处理后调用）。返回 true 表示已消费。标记/领取的键位可在设置中修改。 */
+    /** 键盘按键（在原版处理后调用）。返回 true 表示已消费。标记/领取的键位可在设置中修改。脱离状态下不拦截。 */
     public static boolean onKey(int key, int action) {
-        if (!hasClaimSession() || action != GLFW.GLFW_PRESS) {
+        if (!hasClaimSession() || current.detached || action != GLFW.GLFW_PRESS) {
             return false;
         }
         Minecraft mc = Minecraft.getInstance();
@@ -326,6 +350,9 @@ public final class ClientRollManager {
     private static int renderRoll(GuiGraphicsExtractor g, Minecraft mc, Session roll, double elapsed, int y) {
         // 动画结束即进入领取模式，面板保持可见（无淡出），直至领取完成或被新一轮替换
         float alpha = roll.claimMode ? 1.0F : Mth.clamp((float) (elapsed / INTRO), 0.0F, 1.0F);
+        if (roll.detached) {
+            alpha *= 0.35F; // 脱离状态：整体置灰
+        }
         if (alpha <= 0.01F) {
             return y;
         }
@@ -397,8 +424,8 @@ public final class ClientRollManager {
             int labelX = (g.guiWidth() - mc.font.width(label)) / 2;
             g.text(mc.font, label, labelX, barY + icon + 4, withAlpha(0xFFFFF0C0, alpha), true);
 
-            // 操作提示：仅滚轮/中键/右键，小字号
-            String hint = "§f滚轮 选择   §f中键 标记   §f右键 领取标记";
+            // 操作提示：仅滚轮/中键/右键，小字号；脱离状态提示中键返回（左键脱离不提示）
+            String hint = roll.detached ? "§f中键 返回资源抽奖" : "§f滚轮 选择   §f中键 标记   §f右键 领取标记";
             float hintScale = 0.75F;
             int hintW = mc.font.width(hint);
             int hintX = (int) ((g.guiWidth() - hintW * hintScale) / 2);
@@ -504,5 +531,6 @@ public final class ClientRollManager {
     public static void clear() {
         current = null;
         cardQueue.clear();
+        ClientSkillWheel.clear();
     }
 }
