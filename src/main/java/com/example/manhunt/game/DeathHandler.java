@@ -14,8 +14,8 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.damagesource.DamageSource;
 import net.minecraft.world.damagesource.DamageTypes;
 import net.minecraft.world.entity.EntityTypes;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.boss.enderdragon.EnderDragon;
-import net.minecraft.world.entity.item.ItemEntity;
 import net.minecraft.world.entity.monster.EnderMan;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.GameType;
@@ -30,14 +30,16 @@ import net.neoforged.neoforge.event.entity.player.PlayerEvent;
 import net.neoforged.neoforge.event.entity.player.PlayerXpEvent;
 
 /**
- * 死亡结算、伤害规则（逃跑期保护 / 龙与末影人免伤 / 士气积累）、
- * 死亡不掉装备（猎人背包保留到复活）与 XP 接管。
+ * 死亡结算、伤害规则（逃跑期保护 / 龙与末影人免伤 / 同阵营伤害上限 / 士气积累）、
+ * 死亡不掉装备（猎人装备按原槽位暂存，复活时回穿）与 XP 接管。
  */
 public final class DeathHandler {
     private DeathHandler() {}
 
-    /** 猎人死亡后暂存的背包（uuid → 物品），复活时归还。 */
-    private static final Map<UUID, List<ItemStack>> SAVED_HUNTER_INVENTORY = new HashMap<>();
+    /** 猎人装备暂存：按原槽位记录（slot="main" 为背包下标 0-35，其余为 EquipmentSlot 名称）。 */
+    private record SavedSlot(String slot, int index, ItemStack stack) {}
+
+    private static final Map<UUID, List<SavedSlot>> SAVED_HUNTER_GEAR = new HashMap<>();
 
     // ==================== 死亡结算 ====================
 
@@ -57,11 +59,17 @@ public final class DeathHandler {
         }
 
         if (TeamUtil.isHunter(dead)) {
+            snapshotHunterGear(dead);
             ServerPlayer killer = killer(event);
-            if (killer != null && TeamUtil.isRunner(killer)) {
-                ManhuntGame.onHunterKilledByRunner(server, killer);
-            }
+            // 死亡点 20 格内的所有存活逃生者各恢复 15%；击杀者无论距离必定恢复
+            ManhuntGame.healRunnersNear(server, killer, dead.blockPosition());
             ManhuntGame.scheduleHunterRespawn(server, dead);
+            if (killer != null && TeamUtil.isRunner(killer)) {
+                ManhuntGame.onHunterKilledByRunner(server, killer, dead);
+            } else {
+                ManhuntGame.broadcast(server, "§6[猎人游戏] §c猎人 §f" + dead.getName().getString()
+                    + " §c死亡，" + com.example.manhunt.GameConfig.HUNTER_SPECTATE_TICKS / 20 + " 秒后于复活点复活。");
+            }
         } else if (TeamUtil.isRunner(dead)) {
             ManhuntGame.onRunnerDeath(server, dead);
         }
@@ -75,26 +83,61 @@ public final class DeathHandler {
 
     /**
      * 参与者死亡不产生掉落物：
-     * 猎人背包暂存，复活时原样归还；逃生者（淘汰）物品随之消失。
+     * 猎人装备已在死亡事件中按槽位暂存（{@link #snapshotHunterGear}），复活时回穿；
+     * 逃生者（淘汰）物品随之消失。
      */
     public static void onLivingDrops(LivingDropsEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer dead) || !ManhuntGame.isParticipant(dead.getUUID())) {
             return;
         }
-        if (TeamUtil.isHunter(dead)) {
-            List<ItemStack> saved = new ArrayList<>();
-            for (ItemEntity drop : event.getDrops()) {
-                if (!drop.getItem().isEmpty()) {
-                    saved.add(drop.getItem());
-                }
-            }
-            SAVED_HUNTER_INVENTORY.put(dead.getUUID(), saved);
-        }
         event.getDrops().clear();
         event.setCanceled(true);
     }
 
-    /** 复活后归还猎人背包。 */
+    /** 死亡瞬间按原槽位快照猎人装备（此时物品栏尚未被原版清空）。 */
+    private static void snapshotHunterGear(ServerPlayer dead) {
+        List<SavedSlot> gear = new ArrayList<>();
+        var items = dead.getInventory().getNonEquipmentItems();
+        for (int i = 0; i < items.size(); i++) {
+            if (!items.get(i).isEmpty()) {
+                gear.add(new SavedSlot("main", i, items.get(i).copy()));
+            }
+        }
+        for (EquipmentSlot slot : EquipmentSlot.values()) {
+            ItemStack stack = dead.getItemBySlot(slot);
+            if (!stack.isEmpty()) {
+                gear.add(new SavedSlot(slot.getName(), -1, stack.copy()));
+            }
+        }
+        SAVED_HUNTER_GEAR.put(dead.getUUID(), gear);
+    }
+
+    /** 归还暂存猎人装备：盔甲/副手/主手回穿原槽位，其余按原下标回背包。返回是否归还了物品。 */
+    public static boolean restoreHunterGear(ServerPlayer p) {
+        List<SavedSlot> gear = SAVED_HUNTER_GEAR.remove(p.getUUID());
+        if (gear == null) {
+            return false;
+        }
+        for (SavedSlot s : gear) {
+            if (s.slot().equals("main")) {
+                p.getInventory().getNonEquipmentItems().set(s.index(), s.stack());
+            } else {
+                p.setItemSlot(EquipmentSlot.byName(s.slot()), s.stack());
+            }
+        }
+        p.sendSystemMessage(Component.literal("§7[猎人游戏] 装备已回穿原槽位。"), true);
+        return true;
+    }
+
+    public static void clearHunterGear(UUID id) {
+        SAVED_HUNTER_GEAR.remove(id);
+    }
+
+    public static void clearAllHunterGear() {
+        SAVED_HUNTER_GEAR.clear();
+    }
+
+    /** 复活后：淘汰者转正常旁观者；猎人自动重生后由重生调度接手（旁观 → 传送 → 装备回穿）。 */
     public static void onPlayerRespawn(PlayerEvent.PlayerRespawnEvent event) {
         if (!(event.getEntity() instanceof ServerPlayer player)) {
             return;
@@ -107,16 +150,10 @@ public final class DeathHandler {
             player.setGameMode(GameType.SPECTATOR);
         } else {
             TeamUtil.refreshBuffs(player);
-            List<ItemStack> saved = SAVED_HUNTER_INVENTORY.remove(player.getUUID());
-            if (saved != null) {
-                for (ItemStack stack : saved) {
-                    if (!com.example.manhunt.util.InvUtil.safeAdd(player, stack)) {
-                        player.drop(stack, false);
-                    }
-                }
-                player.sendSystemMessage(Component.literal("§7[猎人游戏] 装备已随复活归还。"));
-            }
             CompassManager.ensureCompasses(player);
+            if (TeamUtil.isHunter(player) && ManhuntGame.isHunterRespawnPending(player.getUUID())) {
+                player.setGameMode(GameType.SPECTATOR); // 10 秒旁观等待
+            }
         }
     }
 
@@ -139,6 +176,16 @@ public final class DeathHandler {
         if (TeamUtil.isHunter(victim) && ManhuntGame.isRunning() && isEndMobDamage(event.getSource())) {
             event.setCanceled(true);
             return;
+        }
+        // 同阵营伤害上限（击退保持原样，不随削减变化）
+        if (ManhuntGame.isRunning()
+                && ManhuntGame.isParticipant(victim.getUUID())
+                && event.getSource().getEntity() instanceof ServerPlayer attacker
+                && ManhuntGame.isParticipant(attacker.getUUID())
+                && ManhuntGame.isHunter(attacker.getUUID()) == ManhuntGame.isHunter(victim.getUUID())) {
+            if (event.getAmount() > com.example.manhunt.GameConfig.FRIENDLY_FIRE_CAP) {
+                event.setAmount(com.example.manhunt.GameConfig.FRIENDLY_FIRE_CAP);
+            }
         }
         if (ManhuntGame.phase() != ManhuntGame.Phase.ESCAPE) {
             return;
@@ -221,14 +268,7 @@ public final class DeathHandler {
             }
         } else if (ManhuntGame.phase() == ManhuntGame.Phase.RUNNING) {
             CompassManager.giveTrackingCompass(player);
-            List<ItemStack> saved = SAVED_HUNTER_INVENTORY.remove(player.getUUID());
-            if (saved != null) {
-                for (ItemStack stack : saved) {
-                    if (!com.example.manhunt.util.InvUtil.safeAdd(player, stack)) {
-                        player.drop(stack, false);
-                    }
-                }
-            }
+            restoreHunterGear(player); // 暂存装备按原槽位归还（含死亡后掉线重连）
         }
         TeamUtil.refreshBuffs(player);
         MileageManager.syncMeter(player);
@@ -251,6 +291,6 @@ public final class DeathHandler {
     }
 
     public static void onLoggedOut(UUID id) {
-        SAVED_HUNTER_INVENTORY.remove(id);
+        // 暂存装备保留至重连归还（不再因掉线丢失）
     }
 }

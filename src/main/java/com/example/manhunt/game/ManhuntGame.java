@@ -18,12 +18,17 @@ import com.example.manhunt.net.LootRollPayload;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.GlobalPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.network.protocol.game.ServerboundClientCommandPacket;
 import net.minecraft.server.MinecraftServer;
+import net.minecraft.server.ServerScoreboard;
 import net.minecraft.server.level.ServerBossEvent;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.BossEvent;
+import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.scores.PlayerTeam;
+import net.minecraft.world.scores.TeamColor;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 /**
@@ -59,9 +64,16 @@ public final class ManhuntGame {
     private static ServerBossEvent countdownBar;
     private static ServerBossEvent checkpointBar;
 
-    /** 猎人死亡后待重生传送：uuid → 目标位置。 */
-    private static final Map<UUID, GlobalPos> PENDING_RESPAWNS = new HashMap<>();
-    private static final Map<UUID, Integer> RESPAWN_WAITS = new HashMap<>();
+    /** 猎人重生计划：死亡 → 自动重生（10 秒旁观者）→ 传送至复活点（选址在传送时刻计算）。 */
+    private record HunterRespawn(long respawnAt, long spectateUntil) {}
+
+    private static final Map<UUID, HunterRespawn> PENDING_HUNTER_RESPAWNS = new HashMap<>();
+    /** 逃生者发光分色队伍前缀：发光描边颜色 = 队伍颜色（循环取色，不用红色）。 */
+    private static final String GLOW_TEAM_PREFIX = "manhunt_glow_";
+    private static final TeamColor[] GLOW_COLORS = {
+        TeamColor.GOLD, TeamColor.GREEN, TeamColor.AQUA, TeamColor.LIGHT_PURPLE,
+        TeamColor.YELLOW, TeamColor.WHITE, TeamColor.BLUE, TeamColor.DARK_GREEN,
+        TeamColor.DARK_AQUA, TeamColor.DARK_PURPLE, TeamColor.GRAY, TeamColor.DARK_BLUE};
 
     // ==================== 状态访问 ====================
 
@@ -134,8 +146,8 @@ public final class ManhuntGame {
         ELIMINATED.clear();
         HUNTERS.addAll(hunters);
         RUNNERS.addAll(runners);
-        PENDING_RESPAWNS.clear();
-        RESPAWN_WAITS.clear();
+        PENDING_HUNTER_RESPAWNS.clear();
+        DeathHandler.clearAllHunterGear();
         soloMode = solo;
         activatedCount = 0;
         currentCheckpoint = null;
@@ -188,6 +200,8 @@ public final class ManhuntGame {
                     "§e[猎人游戏] 你是 §c猎人§e！60 秒倒计时结束后开始追杀所有逃生者。对逃生者造成伤害会积累全队士气并获得超级抽奖。"));
             }
         }
+        // 逃生者发光分色：每人一个独立颜色队伍（发光描边随队伍颜色）
+        assignRunnerGlowTeams(server);
         if (solo) {
             broadcast(server, "§6[猎人游戏] §b单人调试模式开始（无猎人，死亡不结算）。");
         } else {
@@ -230,18 +244,28 @@ public final class ManhuntGame {
         MileageManager.reset();
         MoraleManager.reset();
         SkillSlotManager.reset();
+        ELIMINATED.clear();
+        cleanupRunnerGlowTeams(server);
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
             if (isParticipant(p.getUUID())) {
                 SkillCardsBridge.resetPersistentBonuses(p);
-                p.getInventory().clearContent(); // 对局重置清空背包
-                TeamUtil.resetToDefault(p);
+                if (!p.isDeadOrDying()) {
+                    p.getInventory().clearContent(); // 对局重置清空背包
+                    TeamUtil.resetToDefault(p);
+                }
+                if (p.gameMode() == GameType.SPECTATOR) {
+                    p.setGameMode(GameType.SURVIVAL); // 旁观/淘汰状态复位
+                }
             }
             // 通知客户端清除本地状态（角色/士气条）
             net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(p,
                 new com.example.manhunt.net.ManhuntRolePayload(false, false, false, 0, 0));
         }
-        PENDING_RESPAWNS.clear();
-        RESPAWN_WAITS.clear();
+        PENDING_HUNTER_RESPAWNS.clear();
+        DeathHandler.clearAllHunterGear();
+        // 昼夜速率复位
+        server.overworld().dimensionType().defaultClock().ifPresent(clock ->
+            server.overworld().clockManager().setRate(clock, 1.0F));
         ManhuntStateIO.save(server);
     }
 
@@ -299,6 +323,11 @@ public final class ManhuntGame {
 
         // 里程累计（每刻）
         MileageManager.tick(server);
+
+        // 昼夜 3:7：夜间时钟加速（每秒核对，仅速率变化时发包）
+        if (tickCounter % 20 == 0) {
+            updateDaylightRate(server);
+        }
 
         if (tickCounter % GameConfig.METER_SYNC_INTERVAL_TICKS == 0) {
             for (ServerPlayer p : server.getPlayerList().getPlayers()) {
@@ -426,21 +455,36 @@ public final class ManhuntGame {
 
     // ==================== 死亡与胜负 ====================
 
-    /** 逃生者击杀猎人：击杀者恢复 20% 最大生命。 */
-    public static void onHunterKilledByRunner(MinecraftServer server, ServerPlayer killer) {
-        float heal = (float) (killer.getMaxHealth() * GameConfig.KILLER_HEAL_FRACTION);
-        killer.heal(heal);
-        killer.sendSystemMessage(Component.literal(
-            "§6[猎人游戏] §a击杀猎人！恢复 " + (int) (GameConfig.KILLER_HEAL_FRACTION * 100) + "% 生命（+"
-                + String.format("%.0f", heal) + "）"));
-        broadcast(server, "§6[猎人游戏] §c一名猎人被 §f" + killer.getName().getString() + " §c击杀！");
+    /** 逃生者击杀猎人：全服公告（治疗结算在死亡事件中统一处理）。 */
+    public static void onHunterKilledByRunner(MinecraftServer server, ServerPlayer killer, ServerPlayer deadHunter) {
+        broadcast(server, "§6[猎人游戏] §c一名猎人被 §f" + killer.getName().getString()
+            + " §c击杀！猎人将在 " + GameConfig.HUNTER_SPECTATE_TICKS / 20 + " 秒后于复活点复活。");
     }
 
-    /** 猎人死亡后规划复活位置（重生后由 tick 传送）。 */
+    /** 猎人死亡：死亡点 {@code HEAL_RADIUS} 格内的所有存活逃生者（含击杀者）各恢复一定比例生命。 */
+    public static void healRunnersNear(MinecraftServer server, ServerPlayer killer, net.minecraft.core.BlockPos deathPos) {
+        for (ServerPlayer r : onlineAliveRunners(server)) {
+            if (r != killer && r.distanceToSqr(deathPos.getX(), deathPos.getY(), deathPos.getZ())
+                    > GameConfig.HEAL_RADIUS * GameConfig.HEAL_RADIUS) {
+                continue;
+            }
+            float heal = r.getMaxHealth() * (float) GameConfig.KILLER_HEAL_FRACTION;
+            r.heal(heal);
+            r.sendSystemMessage(Component.literal(
+                "§6[猎人游戏] §a恢复 " + Math.round(GameConfig.KILLER_HEAL_FRACTION * 100) + "% 生命（+"
+                    + String.format("%.0f", heal) + "）"), true);
+        }
+    }
+
+    /** 猎人死亡：规划自动重生（下一刻）与旁观等待时长；复活点在传送时刻选址。 */
     public static void scheduleHunterRespawn(MinecraftServer server, ServerPlayer deadHunter) {
-        GlobalPos pos = RespawnSelector.selectHunterRespawn(server, deadHunter);
-        PENDING_RESPAWNS.put(deadHunter.getUUID(), pos);
-        RESPAWN_WAITS.put(deadHunter.getUUID(), GameConfig.RESPAWN_TELEPORT_MAX_WAIT);
+        long now = server.overworld().getGameTime();
+        PENDING_HUNTER_RESPAWNS.put(deadHunter.getUUID(),
+            new HunterRespawn(now + 2L, now + 2L + GameConfig.HUNTER_SPECTATE_TICKS));
+    }
+
+    public static boolean isHunterRespawnPending(UUID id) {
+        return PENDING_HUNTER_RESPAWNS.containsKey(id);
     }
 
     /** 逃生者死亡：淘汰；全部淘汰则猎人获胜（单人调试模式除外）。 */
@@ -478,39 +522,98 @@ public final class ManhuntGame {
         cleanup(server);
     }
 
-    // ==================== 重生后传送 ====================
+    // ==================== 猎人重生流程 ====================
 
+    /**
+     * 猎人重生：死亡 → 下一刻服务端强制重生（跳过死亡界面）→ 10 秒旁观者模式 →
+     * 传送至复活点（传送时刻选址，末地门覆盖生效）+ 装备回穿 + 回生存模式 + 公告坐标。
+     * 掉线玩家保留计划与装备，重连后继续执行。
+     */
     private static void processPendingRespawns(MinecraftServer server) {
-        if (PENDING_RESPAWNS.isEmpty()) {
+        if (PENDING_HUNTER_RESPAWNS.isEmpty()) {
             return;
         }
+        long now = server.overworld().getGameTime();
         List<UUID> done = new ArrayList<>();
-        for (Map.Entry<UUID, GlobalPos> e : PENDING_RESPAWNS.entrySet()) {
+        for (Map.Entry<UUID, HunterRespawn> e : PENDING_HUNTER_RESPAWNS.entrySet()) {
             ServerPlayer p = server.getPlayerList().getPlayer(e.getKey());
             if (p == null) {
-                int wait = RESPAWN_WAITS.getOrDefault(e.getKey(), 0) - 1;
-                if (wait <= 0) {
-                    done.add(e.getKey());
-                } else {
-                    RESPAWN_WAITS.put(e.getKey(), wait);
+                continue; // 离线：保留计划与暂存装备，重连后继续
+            }
+            HunterRespawn hr = e.getValue();
+            if (!p.isAlive()) {
+                if (now >= hr.respawnAt()) {
+                    // 服务端强制重生（仅对死亡玩家生效，避免与玩家手动重生冲突）
+                    p.connection.handleClientCommand(new ServerboundClientCommandPacket(
+                        ServerboundClientCommandPacket.Action.PERFORM_RESPAWN));
                 }
                 continue;
             }
-            GlobalPos pos = e.getValue();
+            if (now < hr.spectateUntil()) {
+                if (p.gameMode() != GameType.SPECTATOR) {
+                    p.setGameMode(GameType.SPECTATOR);
+                }
+                continue;
+            }
+            GlobalPos pos = RespawnSelector.selectHunterRespawn(server, p);
             ServerLevel level = server.getLevel(pos.dimension());
+            net.minecraft.core.BlockPos bp = pos.pos();
             if (level != null) {
-                BlockPos bp = pos.pos();
                 p.teleportTo(level, bp.getX() + 0.5, bp.getY() + 1, bp.getZ() + 0.5,
                     Set.of(), p.getYRot(), p.getXRot(), false);
             }
+            DeathHandler.restoreHunterGear(p);
             TeamUtil.applyBaseAttributes(p);
             TeamUtil.refreshBuffs(p);
+            p.setGameMode(GameType.SURVIVAL);
             MileageManager.syncMeter(p);
+            p.sendSystemMessage(Component.literal(
+                "§6[猎人游戏] §a你已在复活点复活（§f" + bp.getX() + ", " + bp.getY() + ", " + bp.getZ() + "§a）。"));
             done.add(e.getKey());
         }
         for (UUID id : done) {
-            PENDING_RESPAWNS.remove(id);
-            RESPAWN_WAITS.remove(id);
+            PENDING_HUNTER_RESPAWNS.remove(id);
+        }
+    }
+
+    // ==================== 昼夜与发光队伍 ====================
+
+    /** 昼夜 3:7（日:夜 = 7:3）：夜间时钟加速，仅在速率变化时调用 setRate。 */
+    private static void updateDaylightRate(MinecraftServer server) {
+        ServerLevel overworld = server.overworld();
+        overworld.dimensionType().defaultClock().ifPresent(clock -> {
+            var cm = overworld.clockManager();
+            float want = cm.getTotalTicks(clock) % 24000L >= GameConfig.NIGHT_START_TICK
+                ? GameConfig.NIGHT_CLOCK_RATE
+                : 1.0F;
+            if (Math.abs(cm.getRate(clock) - want) > 1.0E-4F) {
+                cm.setRate(clock, want);
+            }
+        });
+    }
+
+    /** 开局：为每位逃生者创建独立颜色的发光队伍。 */
+    private static void assignRunnerGlowTeams(MinecraftServer server) {
+        ServerScoreboard sb = server.getScoreboard();
+        int i = 0;
+        for (UUID id : RUNNERS) {
+            PlayerTeam team = sb.addPlayerTeam(GLOW_TEAM_PREFIX + i);
+            team.setColor(java.util.Optional.of(GLOW_COLORS[i % GLOW_COLORS.length]));
+            ServerPlayer p = server.getPlayerList().getPlayer(id);
+            if (p != null) {
+                sb.addPlayerToTeam(p.getScoreboardName(), team);
+            }
+            i++;
+        }
+    }
+
+    /** 结束：移除全部发光分色队伍（成员随之出队）。 */
+    private static void cleanupRunnerGlowTeams(MinecraftServer server) {
+        ServerScoreboard sb = server.getScoreboard();
+        for (PlayerTeam team : new ArrayList<>(sb.getPlayerTeams())) {
+            if (team.getName().startsWith(GLOW_TEAM_PREFIX)) {
+                sb.removePlayerTeam(team);
+            }
         }
     }
 

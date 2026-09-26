@@ -32,6 +32,20 @@ public final class GameConfig {
     public static final int MORALE_METER_SHOW_TICKS = 100;
     /** 摔落伤害的保底生命值（保留最后 2 点 = 1 颗心，不会摔死）。 */
     public static final float FALL_MIN_HEALTH = 2.0F;
+    /** 士气阈值序列（封顶已移除：600 之后每档固定 +200）。 */
+    public static final int[] MORALE_THRESHOLDS = {50, 100, 150, 200, 300, 400, 600};
+    /** 600 之后每档固定增加 200。 */
+    public static final int MORALE_STEP_AFTER_LAST = 200;
+    /** 猎人死亡后旁观等待时长（刻）——10 秒后传送至复活点。 */
+    public static final int HUNTER_SPECTATE_TICKS = 200;
+    /** 猎人罗盘红脉冲的触发距离（格）。 */
+    public static final double TRACKING_COMPASS_CLOSE_DIST = 50.0;
+    /** 同阵营伤害上限（点）。 */
+    public static final float FRIENDLY_FIRE_CAP = 2.0F;
+    /** 昼夜比（日:夜 = 7:3）：夜间时钟速率 = 7/3。 */
+    public static final float NIGHT_CLOCK_RATE = 7.0F / 3.0F;
+    /** 夜间判定：时钟时间 ≥ 该值视为夜晚（原版 NIGHT 标记）。 */
+    public static final long NIGHT_START_TICK = 13000L;
 
     // ==================== 技能卡 ====================
     /** 抽卡权重：普通/稀有/黑卡/彩卡（合计任意，按比例分配）。 */
@@ -43,11 +57,6 @@ public final class GameConfig {
     public static final int CARD_SLOT = 8;
     /** 技能切换最短间隔（刻），防止按住左键连续切换。 */
     public static final int SKILL_SWITCH_COOLDOWN_TICKS = 10;
-
-    // ==================== 士气 ====================
-    /** 士气阈值：每达到一档，全体在线猎人各获得一次超级抽奖（1000 封顶）。 */
-    public static final int[] MORALE_THRESHOLDS = {50, 100, 200, 300, 500, 700, 1000};
-    public static final int MORALE_CAP = 1000;
 
     // ==================== 检查点 ====================
     /** 相邻检查点距离范围（格），含 1 号距世界出生点。 */
@@ -65,17 +74,17 @@ public final class GameConfig {
     public static final int MIN_SURFACE_Y = 63;
 
     // ==================== 击杀与复活 ====================
-    /** 逃生者击杀猎人后，击杀者恢复自身最大生命的比例。 */
-    public static final double KILLER_HEAL_FRACTION = 0.20;
+    /** 猎人死亡时，死亡点该半径内的存活逃生者（含击杀者）恢复自身最大生命的比例。 */
+    public static final double KILLER_HEAL_FRACTION = 0.15;
+    /** 猎人死亡时的逃生者治疗半径（格）。 */
+    public static final double HEAL_RADIUS = 20.0;
     /** 复活点须距最近逃生者大于该距离（格）。 */
     public static final double HUNTER_RESPAWN_MIN_DIST = 300.0;
-    /** 复活位置相对参照猎人的随机偏移范围（格）。 */
-    public static final int RESPAWN_OFFSET_MIN = 20;
-    public static final int RESPAWN_OFFSET_MAX = 40;
-    /** 猎人在末地被击杀时，复活在最近激活检查点（要塞）附近该半径内（格）。 */
-    public static final int END_RESPAWN_RADIUS = 100;
-    /** 玩家点击重生后等待传送的最大重试（刻）。 */
-    public static final int RESPAWN_TELEPORT_MAX_WAIT = 600;
+    /** 复活位置相对参照猎人的随机偏移范围（格，约 20 格）。 */
+    public static final int RESPAWN_OFFSET_MIN = 12;
+    public static final int RESPAWN_OFFSET_MAX = 24;
+    /** 无合格参照猎人时，复活在距最近逃生者约该距离的随机地表（格）。 */
+    public static final double HUNTER_RESPAWN_FALLBACK_DIST = 500.0;
 
     // ==================== 周期任务（刻，20 刻 = 1 秒）====================
     public static final int BUFF_REFRESH_INTERVAL_TICKS = 40;

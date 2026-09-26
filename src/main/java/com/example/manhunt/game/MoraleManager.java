@@ -12,8 +12,8 @@ import net.minecraft.server.level.ServerPlayer;
 
 /**
  * 猎人士气量表：全队共享。猎人对逃生者每造成 1 点实际伤害积 1 点士气，
- * 达到阈值（50/100/200/300/500/700/1000，封顶）时每个在线猎人各触发一次超级资源抽奖。
- * 士气量表占用猎人的经验条。
+ * 达到阈值（50/100/150/200/300/400/600，此后每档 +200 无封顶）时每个在线猎人各触发一次超级资源抽奖。
+ * 士气增长后 5 秒内临时接管猎人的经验条。
  */
 public final class MoraleManager {
     private MoraleManager() {}
@@ -22,16 +22,23 @@ public final class MoraleManager {
     private static int rewards = 0;
     private static long lastGainTime = Long.MIN_VALUE;
 
+    /** 第 rewardsIndex 档的阈值；表末之后按固定步长无限外推。 */
+    public static int threshold(int rewardsIndex) {
+        int[] t = GameConfig.MORALE_THRESHOLDS;
+        return rewardsIndex < t.length
+            ? t[rewardsIndex]
+            : t[t.length - 1] + GameConfig.MORALE_STEP_AFTER_LAST * (rewardsIndex - t.length + 1);
+    }
+
     /** 累计士气并结算跨过的阈值（一次大额伤害可连跨多档）。 */
     public static void addMorale(MinecraftServer server, int amount) {
-        if (amount <= 0 || morale >= GameConfig.MORALE_CAP) {
+        if (amount <= 0) {
             return;
         }
         lastGainTime = server.overworld().getGameTime();
-        morale = Math.min(GameConfig.MORALE_CAP, morale + amount);
+        morale += amount;
         int newRewards = 0;
-        while (rewards < GameConfig.MORALE_THRESHOLDS.length
-                && morale >= GameConfig.MORALE_THRESHOLDS[rewards]) {
+        while (morale >= threshold(rewards)) {
             rewards++;
             newRewards++;
         }

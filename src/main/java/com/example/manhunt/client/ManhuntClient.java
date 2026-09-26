@@ -67,8 +67,8 @@ public final class ManhuntClient {
     }
 
     /**
-     * 猎人士气条：屏幕上方的独立条状 UI（蓝条 + 档数标注），与原版 bossbar 位置错开。
-     * 进度 = 距下一档士气（达到 1000 封顶后恒满）。
+     * 猎人士气条：屏幕上方的独立条状 UI，使用原版 bossbar 雪碧图（蓝色 182×5），
+     * 位置在原版 bossbar 区下方避让倒计时。进度 = 距下一档士气（阈值无封顶）。
      */
     private static void renderMoraleBar(GuiGraphicsExtractor g, DeltaTracker delta) {
         Minecraft mc = Minecraft.getInstance();
@@ -80,30 +80,30 @@ public final class ManhuntClient {
         }
         int morale = ManhuntClientState.morale();
         int rewards = ManhuntClientState.moraleRewards();
-        int[] thresholds = com.example.manhunt.GameConfig.MORALE_THRESHOLDS;
-        float progress;
-        if (rewards >= thresholds.length) {
-            progress = 1.0F;
-        } else {
-            int next = thresholds[rewards];
-            int prev = rewards == 0 ? 0 : thresholds[rewards - 1];
-            progress = net.minecraft.util.Mth.clamp((morale - prev) / (float) Math.max(1, next - prev), 0.0F, 1.0F);
-        }
-        int w = 182;
-        int x = (g.guiWidth() - w) / 2;
-        int y = 28;
-        // 标注：士气值 + 档数
-        String label = "§b士气 " + morale + " §7· 档 " + rewards + "/" + thresholds.length;
+        int next = threshold(rewards);
+        int prev = rewards == 0 ? 0 : threshold(rewards - 1);
+        float progress = net.minecraft.util.Mth.clamp((morale - prev) / (float) Math.max(1, next - prev), 0.0F, 1.0F);
+        int x = g.guiWidth() / 2 - 91;
+        int y = 24;
+        // 标注：士气值 + 档数（1-based，无封顶）
+        String label = "§b士气 " + morale + " §7· 档 " + (rewards + 1);
         g.text(mc.font, label, (g.guiWidth() - mc.font.width(label)) / 2, y - 10, 0xFFFFFFFF, true);
-        // 底板 + 蓝色填充 + 细边框
-        g.fill(x - 1, y - 1, x + w + 1, y + 6, 0xC0101010);
-        g.fill(x, y, x + w, y + 5, 0xFF2A2A2A);
-        int fill = (int) (w * progress);
+        // 原版 bossbar 雪碧图（与 BossHealthOverlay 同款绘制）
+        g.blitSprite(net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED,
+            Identifier.withDefaultNamespace("boss_bar/blue_background"), 182, 5, 0, 0, x, y, 182, 5);
+        int fill = net.minecraft.util.Mth.lerpDiscrete(progress, 0, 182);
         if (fill > 0) {
-            g.fill(x, y, x + fill, y + 5, 0xFF0078D4);
+            g.blitSprite(net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED,
+                Identifier.withDefaultNamespace("boss_bar/blue_progress"), 182, 5, 0, 0, x, y, fill, 5);
         }
-        g.fill(x - 1, y - 1, x, y + 6, 0xFF3C3C3C);
-        g.fill(x + w, y - 1, x + w + 1, y + 6, 0xFF3C3C3C);
+    }
+
+    /** 第 rewardsIndex 档阈值；与 MoraleManager.threshold 一致（表末后按步长外推）。 */
+    private static int threshold(int rewardsIndex) {
+        int[] t = com.example.manhunt.GameConfig.MORALE_THRESHOLDS;
+        return rewardsIndex < t.length
+            ? t[rewardsIndex]
+            : t[t.length - 1] + com.example.manhunt.GameConfig.MORALE_STEP_AFTER_LAST * (rewardsIndex - t.length + 1);
     }
 
     /**
@@ -208,6 +208,15 @@ public final class ManhuntClient {
                 return km;
             }
         }
+        // 回退：CoAS 键位注册类字段（防键名变更）
+        try {
+            Object km = Class.forName("com.ofekn.crafting_on_a_stick.client.CoasKeyMappings")
+                .getField("OPEN_CURIOS_KEY").get(null);
+            if (km instanceof KeyMapping k) {
+                return k;
+            }
+        } catch (Throwable ignored) {
+        }
         return null;
     }
 
@@ -215,7 +224,10 @@ public final class ManhuntClient {
         return Minecraft.getInstance();
     }
 
-    /** CoasWheelScreen 打开时再按开启键 → 关闭（一键开关）。 */
+    /**
+     * CoAS 滚轮一键开关：滚轮打开时再按开启键 → 关闭。
+     * CoAS 以 consumeClick 计数在 tick 中开屏——关闭后必须排空计数，否则同一次按键会立刻重开。
+     */
     @SubscribeEvent
     public static void onCoasToggleKey(InputEvent.Key event) {
         if (event.getAction() != GLFW.GLFW_PRESS) {
@@ -223,15 +235,17 @@ public final class ManhuntClient {
         }
         Minecraft mc = mc();
         Screen screen = mc.gui.screen();
-        boolean coasScreen = screen != null && isCoasWheelScreen(screen);
-        if (!coasScreen) {
-            coasPressArmed = true; // 本次按下可能打开了滚轮
+        if (screen == null || !isCoasWheelScreen(screen)) {
+            coasPressArmed = true; // 本次按下可能打开滚轮（CoAS 在 tick 中消费按键）
             return;
         }
         KeyMapping openKey = coasOpenKey();
-        if (openKey != null && openKey.getKey().getValue() == event.getKey() && coasPressArmed) {
+        if (openKey != null && openKey.getKey().getValue() == event.getKey()) {
             mc.gui.setScreen(null);
             coasPressArmed = false;
+            while (openKey.consumeClick()) {
+                // 排空点击计数
+            }
         }
     }
 
@@ -267,7 +281,8 @@ public final class ManhuntClient {
     public static void onKey(InputEvent.Key event) {
         int key = event.getKey();
         if (key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER
-                || key == GLFW.GLFW_KEY_LEFT || key == GLFW.GLFW_KEY_RIGHT) {
+                || key == GLFW.GLFW_KEY_LEFT || key == GLFW.GLFW_KEY_RIGHT
+                || key == GLFW.GLFW_KEY_UP || key == GLFW.GLFW_KEY_DOWN) {
             ClientRollManager.onKey(key, event.getAction());
         }
     }

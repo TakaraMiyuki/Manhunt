@@ -123,18 +123,14 @@ public final class MileageManager {
         long mileage = MILEAGE.getOrDefault(p.getUUID(), 0L);
         MinecraftServer server = p.level().getServer();
         if (TeamUtil.isHunter(p) && server != null && MoraleManager.showingOnMeter(server)) {
-            // 士气量表临时接管经验条
+            // 士气量表临时接管经验条（无封顶，阈值超出表后按步长外推）
             int rewards = MoraleManager.rewards();
             int morale = MoraleManager.morale();
             p.experienceLevel = rewards;
             p.totalExperience = 1_000_000 + morale; // 与里程域区分，保证量表切换触发同步包
-            if (rewards >= GameConfig.MORALE_THRESHOLDS.length) {
-                p.experienceProgress = 1.0F;
-            } else {
-                int next = GameConfig.MORALE_THRESHOLDS[rewards];
-                int prev = rewards == 0 ? 0 : GameConfig.MORALE_THRESHOLDS[rewards - 1];
-                p.experienceProgress = (float) (morale - prev) / Math.max(1, next - prev);
-            }
+            int next = MoraleManager.threshold(rewards);
+            int prev = rewards == 0 ? 0 : MoraleManager.threshold(rewards - 1);
+            p.experienceProgress = (float) (morale - prev) / Math.max(1, next - prev);
             return;
         }
         p.experienceLevel = ROLL_COUNT.getOrDefault(p.getUUID(), 0);

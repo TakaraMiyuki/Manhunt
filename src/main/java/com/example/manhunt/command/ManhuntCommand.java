@@ -264,14 +264,12 @@ public final class ManhuntCommand {
         if (add) {
             MoraleManager.addMorale(ctx.getSource().getServer(), amount);
         } else {
-            MoraleManager.restore(Math.min(amount, GameConfig.MORALE_CAP), 0);
             // 按新值重算已触发档数
             int rewards = 0;
-            while (rewards < GameConfig.MORALE_THRESHOLDS.length
-                    && amount >= GameConfig.MORALE_THRESHOLDS[rewards]) {
+            while (amount >= MoraleManager.threshold(rewards)) {
                 rewards++;
             }
-            MoraleManager.restore(Math.min(amount, GameConfig.MORALE_CAP), rewards);
+            MoraleManager.restore(amount, rewards);
         }
         ctx.getSource().sendSuccess(() -> Component.literal(
             "§7士气：" + MoraleManager.morale() + "（已触发 " + MoraleManager.rewards() + " 档）"), true);

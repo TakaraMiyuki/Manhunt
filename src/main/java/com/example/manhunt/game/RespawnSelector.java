@@ -1,6 +1,6 @@
 package com.example.manhunt.game;
 
-import java.util.UUID;
+import java.util.List;
 
 import com.example.manhunt.GameConfig;
 
@@ -14,78 +14,106 @@ import net.minecraft.util.RandomSource;
 import net.minecraft.world.level.Level;
 
 /**
- * 猎人复活位置选址规则。
+ * 猎人复活位置选址（在传送时刻调用，保证末地覆盖与最新位置生效）：
+ * <ol>
+ *   <li>有存活逃生者进入末地 → 全体猎人重生至末地传送门门口（要塞传送门房间）；</li>
+ *   <li>距最近逃生者 &gt;{@code HUNTER_RESPAWN_MIN_DIST} 格的存活猎人中取<b>最近</b>者，
+ *       在其附近约 20 格复活；</li>
+ *   <li>无合格猎人 → 距最近逃生者约 {@code HUNTER_RESPAWN_FALLBACK_DIST} 格的随机方向地表；</li>
+ *   <li>兜底：世界出生点。</li>
+ * </ol>
  */
 public final class RespawnSelector {
     private RespawnSelector() {}
 
     private static final RandomSource RNG = RandomSource.create();
 
-    /**
-     * 规则：
-     * <ul>
-     *   <li>在末地被击杀 → 复活在最近激活检查点（通常为要塞）附近 {@code END_RESPAWN_RADIUS} 格（主世界）；</li>
-     *   <li>其他情况 → 距最近逃生者 &gt;{@code HUNTER_RESPAWN_MIN_DIST} 格的存活猎人中，
-     *       选距逃生者最远者，在其附近随机复活；</li>
-     *   <li>无合格猎人 → 最近激活的检查点；再退到世界出生点。</li>
-     * </ul>
-     */
-    public static GlobalPos selectHunterRespawn(MinecraftServer server, ServerPlayer deadHunter) {
+    public static GlobalPos selectHunterRespawn(MinecraftServer server, ServerPlayer respawning) {
         ServerLevel overworld = server.overworld();
-        BlockPos base = null;
+        List<ServerPlayer> runners = ManhuntGame.onlineAliveRunners(server);
 
-        if (deadHunter.level().dimension() == Level.END) {
-            BlockPos anchor = ManhuntGame.lastCheckpoint();
-            if (anchor != null) {
-                base = randomNear(overworld, anchor, GameConfig.END_RESPAWN_RADIUS);
+        // ① 末地覆盖：有逃生者进入末地后，猎人重生点变更为末地传送门门口
+        if (!runners.isEmpty() && anyRunnerInEnd(runners)) {
+            GlobalPos portal = ManhuntGame.strongholdPortalPos();
+            if (portal != null) {
+                return portal;
             }
         }
 
-        if (base == null) {
-            ServerPlayer anchor = findFarthestHunter(server, deadHunter.getUUID());
-            if (anchor != null) {
-                base = randomNear(overworld, anchor.blockPosition(),
-                    GameConfig.RESPAWN_OFFSET_MIN, GameConfig.RESPAWN_OFFSET_MAX);
-            }
-        }
-
-        if (base == null) {
-            BlockPos last = ManhuntGame.lastCheckpoint();
-            if (last != null) {
-                base = randomNear(overworld, last, 32);
-            }
-        }
-
-        if (base == null) {
-            base = surfacePos(overworld, overworld.getLevelData().getRespawnData().pos());
-        }
-        return GlobalPos.of(Level.OVERWORLD, base);
-    }
-
-    /** 在距最近逃生者 &gt;300 格的存活猎人中选最远者。 */
-    private static ServerPlayer findFarthestHunter(MinecraftServer server, UUID deadId) {
-        ServerPlayer best = null;
-        double bestDist = -1;
+        // ② 距逃生者 >300 格的存活猎人中取最近者，附近约 20 格复活
+        ServerPlayer anchor = null;
+        double best = Double.MAX_VALUE;
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-            if (!TeamUtil.isHunter(p) || p.getUUID().equals(deadId) || p.isDeadOrDying()) {
+            if (!TeamUtil.isHunter(p) || p.getUUID().equals(respawning.getUUID()) || p.isDeadOrDying()) {
                 continue;
             }
-            double nearest = nearestRunnerDistSq(server, p);
+            double nearest = nearestRunnerDistSq(runners, p);
             if (nearest > GameConfig.HUNTER_RESPAWN_MIN_DIST * GameConfig.HUNTER_RESPAWN_MIN_DIST
-                    && nearest > bestDist) {
-                bestDist = nearest;
-                best = p;
+                    && nearest < best) {
+                best = nearest;
+                anchor = p;
             }
         }
-        return best;
+        if (anchor != null) {
+            return GlobalPos.of(Level.OVERWORLD, randomNear(overworld, anchor.blockPosition(),
+                GameConfig.RESPAWN_OFFSET_MIN, GameConfig.RESPAWN_OFFSET_MAX));
+        }
+
+        // ③ 距最近逃生者约 500 格的随机地表
+        if (!runners.isEmpty()) {
+            BlockPos fallback = distantSurface(overworld, runners);
+            if (fallback != null) {
+                return GlobalPos.of(Level.OVERWORLD, fallback);
+            }
+        }
+
+        // ④ 兜底：世界出生点
+        return GlobalPos.of(Level.OVERWORLD, overworld.getLevelData().getRespawnData().pos());
     }
 
-    private static double nearestRunnerDistSq(MinecraftServer server, ServerPlayer hunter) {
+    private static boolean anyRunnerInEnd(List<ServerPlayer> runners) {
+        for (ServerPlayer r : runners) {
+            if (r.level().dimension() == Level.END) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static double nearestRunnerDistSq(List<ServerPlayer> runners, ServerPlayer hunter) {
         double min = Double.MAX_VALUE;
-        for (ServerPlayer r : ManhuntGame.onlineAliveRunners(server)) {
+        for (ServerPlayer r : runners) {
             min = Math.min(min, hunter.distanceToSqr(r));
         }
         return min;
+    }
+
+    /** 以首个存活逃生者为参照，随机方向约 500 格的地表点；校验与所有逃生者的距离。 */
+    private static BlockPos distantSurface(ServerLevel overworld, List<ServerPlayer> runners) {
+        ServerPlayer ref = runners.get(0);
+        double minDistSq = GameConfig.HUNTER_RESPAWN_FALLBACK_DIST * GameConfig.HUNTER_RESPAWN_FALLBACK_DIST;
+        for (int attempt = 0; attempt < 24; attempt++) {
+            double angle = RNG.nextDouble() * Math.PI * 2;
+            double dist = GameConfig.HUNTER_RESPAWN_FALLBACK_DIST + RNG.nextDouble() * 64;
+            int x = Mth.floor(ref.getX() + Math.cos(angle) * dist);
+            int z = Mth.floor(ref.getZ() + Math.sin(angle) * dist);
+            int y = CheckpointManager.surfaceY(overworld, x, z);
+            if (y < GameConfig.MIN_SURFACE_Y) {
+                continue; // 水面/未加载
+            }
+            BlockPos pos = new BlockPos(x, y, z);
+            boolean ok = true;
+            for (ServerPlayer r : runners) {
+                if (r.distanceToSqr(pos.getX(), pos.getY(), pos.getZ()) < minDistSq * 0.92) {
+                    ok = false;
+                    break;
+                }
+            }
+            if (ok) {
+                return pos;
+            }
+        }
+        return null;
     }
 
     private static BlockPos randomNear(ServerLevel overworld, BlockPos center, int min, int max) {
@@ -99,17 +127,6 @@ public final class RespawnSelector {
                 return new BlockPos(x, y, z);
             }
         }
-        return surfacePos(overworld, center);
-    }
-
-    private static BlockPos randomNear(ServerLevel overworld, BlockPos center, int radius) {
-        return randomNear(overworld, center, radius / 2, radius);
-    }
-
-    /** 取参照点所在柱的地表位置（水面上则原地返回由调用方兜底）。 */
-    private static BlockPos surfacePos(ServerLevel overworld, BlockPos ref) {
-        int x = ref.getX(), z = ref.getZ();
-        int y = CheckpointManager.surfaceY(overworld, x, z);
-        return new BlockPos(x, Math.max(y, ref.getY()), z);
+        return center;
     }
 }
