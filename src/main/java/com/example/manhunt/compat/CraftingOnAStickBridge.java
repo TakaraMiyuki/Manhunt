@@ -39,12 +39,15 @@ public final class CraftingOnAStickBridge {
         for (String id : STICK_IDS) {
             try {
                 var holder = BuiltInRegistries.ITEM.get(Identifier.parse(id));
-                if (holder.isPresent()) {
+                // 默认注册表对未知 id 会返回 AIR 的 holder——必须排除
+                if (holder.isPresent() && holder.get().value() != net.minecraft.world.item.Items.AIR) {
+                    ManhuntMod.LOGGER.info("[Manhunt] 便携工作台物品已找到: {}", id);
                     return holder.get().value();
                 }
             } catch (Exception ignored) {
             }
         }
+        ManhuntMod.LOGGER.warn("[Manhunt] 未找到 Crafting on a Stick 物品，便携工作台跳过发放");
         return null;
     }
 
@@ -88,33 +91,39 @@ public final class CraftingOnAStickBridge {
 
     /**
      * 反射调用 Curios API：把物品放进专属饰品栏（crafting_on_a_stick）的空位。
+     * 方法一律从公开接口查找并 setAccessible(true)——Curios 的槽位实现类非公开，
+     * 对具体类调用 invoke 会抛 IllegalAccessException。
      * @return "equipped" 成功 / "occupied" 专属栏已有物品 / "failed" 无饰品栏或反射失败
      */
     private static String equipIntoCurios(ServerPlayer player, ItemStack stack) {
         try {
             Class<?> api = Class.forName("top.theillusivec4.curios.api.CuriosApi");
-            Optional<?> handlerOpt = (Optional<?>) api
-                .getMethod("getCuriosInventory", net.minecraft.world.entity.player.Player.class)
+            Optional<?> handlerOpt = (Optional<?>) lookup(api,
+                "getCuriosInventory", net.minecraft.world.entity.player.Player.class)
                 .invoke(null, player);
             if (handlerOpt.isEmpty()) {
+                ManhuntMod.LOGGER.warn("[Manhunt] Curios getCuriosInventory 为空，无法装备饰品栏");
                 return "failed";
             }
             Object handler = handlerOpt.get();
             Class<?> handlerType = Class.forName("top.theillusivec4.curios.api.type.capability.ICuriosItemHandler");
-            Object curios = handlerType.getMethod("getCurios").invoke(handler);
+            Object curios = lookup(handlerType, "getCurios").invoke(handler);
             if (!(curios instanceof java.util.Map<?, ?> curioMap)) {
+                ManhuntMod.LOGGER.warn("[Manhunt] Curios getCurios 返回异常类型");
                 return "failed";
             }
-            // 优先专属槽
-            String preferred = curioMap.containsKey(CURIOS_SLOT_ID) ? CURIOS_SLOT_ID : null;
+            Method setEquipped = lookup(handlerType, "setEquippedCurio",
+                String.class, int.class, ItemStack.class);
+            // 优先 CoAS 专属槽；无专属槽时退而求其次找任意空位
+            String chosenKey = curioMap.containsKey(CURIOS_SLOT_ID) ? CURIOS_SLOT_ID : null;
             String emptyKey = null;
             int emptyIndex = -1;
             for (var entry : curioMap.entrySet()) {
                 String slotId = String.valueOf(entry.getKey());
-                Object stacks = stacksHandlerType()
-                    .getMethod("getStacks").invoke(entry.getValue());
-                int count = (int) stacks.getClass().getMethod("getSlots").invoke(stacks);
-                Method getStackInSlot = stacks.getClass().getMethod("getStackInSlot", int.class);
+                Object stacks = lookup(stacksHandlerType(), "getStacks").invoke(entry.getValue());
+                Class<?> dyn = Class.forName("top.theillusivec4.curios.api.type.inventory.IDynamicStackHandler");
+                int count = (int) lookup(dyn, "getSlots").invoke(stacks);
+                Method getStackInSlot = lookup(dyn, "getStackInSlot", int.class);
                 for (int i = 0; i < count; i++) {
                     ItemStack inSlot = (ItemStack) getStackInSlot.invoke(stacks, i);
                     if (slotId.equals(CURIOS_SLOT_ID) && !inSlot.isEmpty()) {
@@ -124,21 +133,28 @@ public final class CraftingOnAStickBridge {
                         emptyKey = slotId;
                         emptyIndex = i;
                     }
-                    if (preferred != null) {
+                    if (chosenKey != null) {
                         break; // 有专属槽时只检查专属槽
                     }
                 }
             }
             if (emptyKey == null) {
+                ManhuntMod.LOGGER.warn("[Manhunt] Curios 饰品栏无空位，退回背包");
                 return "failed";
             }
-            handlerType.getMethod("setEquippedCurio", String.class, int.class, ItemStack.class)
-                .invoke(handler, emptyKey, emptyIndex, stack);
+            setEquipped.invoke(handler, emptyKey, emptyIndex, stack);
             return "equipped";
         } catch (Throwable t) {
-            ManhuntMod.LOGGER.debug("[Manhunt] Curios 饰品栏装备失败，退回背包: {}", t.toString());
+            ManhuntMod.LOGGER.warn("[Manhunt] Curios 饰品栏装备失败，退回背包", t);
             return "failed";
         }
+    }
+
+    /** 反射查找方法并强制可访问（Curios 槽位实现类可能非公开）。 */
+    private static Method lookup(Class<?> type, String name, Class<?>... params) throws Exception {
+        Method m = type.getMethod(name, params);
+        m.setAccessible(true);
+        return m;
     }
 
     private static Class<?> stacksHandlerType() throws ClassNotFoundException {
