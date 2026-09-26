@@ -14,6 +14,8 @@ base {
 dependencies {
     // 技能卡联动（可选依赖）：编译期引用其 jar，运行期未安装时全部抽卡逻辑自动跳过
     implementation files("${rootDir}/../SkillCards/build/libs/skillcards-0.1.0-beta.jar")
+    // Curios API（可选联动）：编译期引用整合包内真实 jar，用于饰品栏直写
+    compileOnly files("libs/curios-neoforge-16.0.0+26.2.jar")
 }
 
 neoForge {
