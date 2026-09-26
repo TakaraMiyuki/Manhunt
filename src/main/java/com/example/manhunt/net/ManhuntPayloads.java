@@ -3,6 +3,10 @@ package com.example.manhunt.net;
 import com.example.manhunt.cards.SkillSlotManager;
 import com.example.manhunt.loot.PendingRewardManager;
 
+import net.minecraft.network.chat.Component;
+import net.minecraft.world.SimpleMenuProvider;
+import net.minecraft.world.inventory.CraftingMenu;
+
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
@@ -30,6 +34,20 @@ public final class ManhuntPayloads {
             (payload, ctx) -> {
                 if (ctx.player() instanceof net.minecraft.server.level.ServerPlayer player) {
                     SkillSlotManager.switchSkill(player);
+                }
+            });
+        // 3×3 便携合成（覆写 stillValid 使菜单随身不失效）
+        registrar.playToServer(OpenCraftingPayload.TYPE, OpenCraftingPayload.STREAM_CODEC,
+            (payload, ctx) -> {
+                if (ctx.player() instanceof net.minecraft.server.level.ServerPlayer player) {
+                    player.openMenu(new SimpleMenuProvider(
+                        (id, inv, p) -> new CraftingMenu(id, inv) {
+                            @Override
+                            public boolean stillValid(net.minecraft.world.entity.player.Player pl) {
+                                return true;
+                            }
+                        },
+                        Component.literal("3×3 合成")));
                 }
             });
 

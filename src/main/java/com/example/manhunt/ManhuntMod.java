@@ -57,6 +57,7 @@ public final class ManhuntMod {
         NeoForge.EVENT_BUS.addListener(DeathHandler::onPlayerLoggedIn);
         NeoForge.EVENT_BUS.addListener(DeathHandler::onDimensionChange);
         NeoForge.EVENT_BUS.addListener(CompassManager::onRightClick);
+        NeoForge.EVENT_BUS.addListener(CompassManager::onItemToss);
         NeoForge.EVENT_BUS.addListener(ManhuntMod::onLoggedOut);
         // 经验球不再跟随参与者（配合 PickupXp 取消，防止经验球环绕无法吸收）
         NeoForge.EVENT_BUS.addListener(ManhuntMod::onXpOrbTargeting);
