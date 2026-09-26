@@ -37,21 +37,45 @@ public final class SkillCardsBridge {
         }
     }
 
-    /** 按权重随机抽一张卡（排除已拥有的物品 id；该品级抽完则回退到任意未拥有卡）。 */
+    /** 加权抽取：每张未拥有卡的权重 = 其品级权重（抽尽品级自动退出池，分布全程保持）。 */
     public static CardDraw drawRandom(RandomSource rng, java.util.Set<String> excludeIds) {
-        int total = GameConfig.CARD_WEIGHT_COMMON + GameConfig.CARD_WEIGHT_RARE
-            + GameConfig.CARD_WEIGHT_BLACK + GameConfig.CARD_WEIGHT_RAINBOW;
+        record Weighted(com.example.skillcards.registry.Card card, int weight) {}
+        List<Weighted> pool = new ArrayList<>();
+        for (com.example.skillcards.registry.Card card : com.example.skillcards.registry.Card.values()) {
+            if (excludeIds.contains(itemIdOf(card))) {
+                continue;
+            }
+            int weight = gradeWeight(card.grade());
+            if (weight > 0) {
+                pool.add(new Weighted(card, weight));
+            }
+        }
+        if (pool.isEmpty()) {
+            return null; // 14 张全部集齐
+        }
+        int total = 0;
+        for (Weighted w : pool) {
+            total += w.weight();
+        }
         int roll = rng.nextInt(total);
-        if (roll < GameConfig.CARD_WEIGHT_RAINBOW) {
-            return drawOfGrade(com.example.skillcards.registry.Card.Grade.RAINBOW, rng, excludeIds);
+        for (Weighted w : pool) {
+            roll -= w.weight();
+            if (roll < 0) {
+                ItemStack stack = new ItemStack(com.example.skillcards.registry.ModItems.itemOf(w.card()));
+                return new CardDraw(w.card(), stack);
+            }
         }
-        if (roll < GameConfig.CARD_WEIGHT_RAINBOW + GameConfig.CARD_WEIGHT_BLACK) {
-            return drawOfGrade(com.example.skillcards.registry.Card.Grade.BLACK, rng, excludeIds);
-        }
-        if (roll < GameConfig.CARD_WEIGHT_RAINBOW + GameConfig.CARD_WEIGHT_BLACK + GameConfig.CARD_WEIGHT_RARE) {
-            return drawOfGrade(com.example.skillcards.registry.Card.Grade.RARE, rng, excludeIds);
-        }
-        return drawOfGrade(com.example.skillcards.registry.Card.Grade.COMMON, rng, excludeIds);
+        return null; // 理论不可达
+    }
+
+    /** 品级权重（黑卡与稀有同权）。 */
+    public static int gradeWeight(com.example.skillcards.registry.Card.Grade grade) {
+        return switch (grade) {
+            case RAINBOW -> GameConfig.CARD_WEIGHT_RAINBOW;
+            case BLACK -> GameConfig.CARD_WEIGHT_BLACK;
+            case RARE -> GameConfig.CARD_WEIGHT_RARE;
+            default -> GameConfig.CARD_WEIGHT_COMMON;
+        };
     }
 
     /** 指定品级随机抽一张（排除已拥有；该品级抽完回退到任意未拥有卡，全部集齐返回 null）。 */

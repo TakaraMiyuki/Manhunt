@@ -48,10 +48,10 @@ public final class GameConfig {
     public static final long NIGHT_START_TICK = 13000L;
 
     // ==================== 技能卡 ====================
-    /** 抽卡权重：普通/稀有/黑卡/彩卡（合计任意，按比例分配）。 */
+    /** 抽卡权重：普通/稀有/黑卡/彩卡（黑卡与稀有同权；合计任意，按比例分配）。 */
     public static final int CARD_WEIGHT_COMMON = 54;
     public static final int CARD_WEIGHT_RARE = 30;
-    public static final int CARD_WEIGHT_BLACK = 12;
+    public static final int CARD_WEIGHT_BLACK = 30;
     public static final int CARD_WEIGHT_RAINBOW = 4;
     /** 技能栏固定于快捷栏最右一格（0-based）。 */
     public static final int CARD_SLOT = 8;

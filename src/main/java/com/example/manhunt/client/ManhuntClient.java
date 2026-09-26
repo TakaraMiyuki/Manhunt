@@ -116,8 +116,9 @@ public final class ManhuntClient {
             return;
         }
         if (!ManhuntClientState.isRunner()) {
-            renderTrackingCompassBorder(g, mc, delta);
-            return; // 猎人显示追踪罗盘边框（贴近逃生者时红色脉冲）
+            // 猎人：追踪罗盘边框（贴近锁定目标时红色脉冲）
+            renderCompassBorder(g, mc, delta, com.example.manhunt.item.ManhuntItems.TRACKING_COMPASS.get());
+            return;
         }
         ItemStack slot = mc.player.getInventory().getItem(8);
         boolean hasCard = com.example.manhunt.cards.SkillCardsBridge.available()
@@ -138,20 +139,23 @@ public final class ManhuntClient {
         g.fill(x - 3, y + 17, x + 19, y + 19, col);
         g.fill(x - 3, y - 1, x - 1, y + 17, col);
         g.fill(x + 17, y - 1, x + 19, y + 17, col);
+        // 逃生者：检查点罗盘 <50 格红脉冲
+        renderCompassBorder(g, mc, delta, com.example.manhunt.item.ManhuntItems.CHECKPOINT_COMPASS.get());
     }
 
     /**
-     * 猎人追踪罗盘边框：罗盘所在物品栏格子常显金框；
-     * 当罗盘目标（逃生者）与猎人距离 < 50 格时变为红色快速脉冲。
+     * 罗盘槽位边框：罗盘所在格子常显金框；
+     * 当罗盘目标（猎人=锁定逃生者 / 逃生者=当前检查点）距离 < 50 格时变为红色快速脉冲。
      */
-    private static void renderTrackingCompassBorder(GuiGraphicsExtractor g, Minecraft mc, DeltaTracker delta) {
+    private static void renderCompassBorder(GuiGraphicsExtractor g, Minecraft mc, DeltaTracker delta,
+                                            net.minecraft.world.item.Item compassItem) {
         if (mc.player == null || mc.level == null || mc.gui.hud.isHidden()) {
             return;
         }
         var inv = mc.player.getInventory().getNonEquipmentItems();
         for (int slot = 0; slot < inv.size(); slot++) {
             ItemStack stack = inv.get(slot);
-            if (!stack.is(com.example.manhunt.item.ManhuntItems.TRACKING_COMPASS.get())) {
+            if (!stack.is(compassItem)) {
                 continue;
             }
             int x = g.guiWidth() / 2 - 90 + slot * 20 + 2;
@@ -188,7 +192,6 @@ public final class ManhuntClient {
     // ==================== CoAS 滚轮一键开关 ====================
 
     private static Class<?> coasWheelScreenClass;
-    private static boolean coasPressArmed;
 
     private static boolean isCoasWheelScreen(Screen screen) {
         if (coasWheelScreenClass == null) {
@@ -200,6 +203,15 @@ public final class ManhuntClient {
             }
         }
         return coasWheelScreenClass.isInstance(screen);
+    }
+
+    /**
+     * 是否为 CoAS 系界面：滚轮，或单物品时经 SBOpen 直接打开的原版合成界面
+     * （CoasItem 走 player.openMenu，客户端即 CraftingScreen）。
+     */
+    private static boolean isCoasScreen(Screen screen) {
+        return isCoasWheelScreen(screen)
+            || screen instanceof net.minecraft.client.gui.screens.inventory.CraftingScreen;
     }
 
     private static KeyMapping coasOpenKey() {
@@ -225,7 +237,7 @@ public final class ManhuntClient {
     }
 
     /**
-     * CoAS 滚轮一键开关：滚轮打开时再按开启键 → 关闭。
+     * CoAS 一键开关：CoAS 界面（滚轮或合成界面）打开时再按开启键 → 关闭。
      * CoAS 以 consumeClick 计数在 tick 中开屏——关闭后必须排空计数，否则同一次按键会立刻重开。
      */
     @SubscribeEvent
@@ -235,14 +247,12 @@ public final class ManhuntClient {
         }
         Minecraft mc = mc();
         Screen screen = mc.gui.screen();
-        if (screen == null || !isCoasWheelScreen(screen)) {
-            coasPressArmed = true; // 本次按下可能打开滚轮（CoAS 在 tick 中消费按键）
+        if (screen == null || !isCoasScreen(screen)) {
             return;
         }
         KeyMapping openKey = coasOpenKey();
         if (openKey != null && openKey.getKey().getValue() == event.getKey()) {
             mc.gui.setScreen(null);
-            coasPressArmed = false;
             while (openKey.consumeClick()) {
                 // 排空点击计数
             }
