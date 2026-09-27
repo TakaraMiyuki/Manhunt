@@ -424,15 +424,16 @@ public final class ClientRollManager {
             int labelX = (g.guiWidth() - mc.font.width(label)) / 2;
             g.text(mc.font, label, labelX, barY + icon + 4, withAlpha(0xFFFFF0C0, alpha), true);
 
-            // 操作提示：仅滚轮/中键/右键，小字号；脱离状态提示中键返回（左键脱离不提示）
+            // 操作提示：仅滚轮/中键/右键，小字号；脱离状态提示中键返回（不随面板淡化，左键脱离不提示）
             String hint = roll.detached ? "§f中键 返回资源抽奖" : "§f滚轮 选择   §f中键 标记   §f右键 领取标记";
+            float hintAlpha = roll.detached ? 1.0F : alpha;
             float hintScale = 0.75F;
             int hintW = mc.font.width(hint);
             int hintX = (int) ((g.guiWidth() - hintW * hintScale) / 2);
             g.pose().pushMatrix();
             g.pose().translate(hintX, barY + icon + 14);
             g.pose().scale(hintScale, hintScale);
-            g.text(mc.font, hint, 0, 0, withAlpha(0xFFB8B8B8, alpha), true);
+            g.text(mc.font, hint, 0, 0, withAlpha(0xFFFFFFFF, hintAlpha), true);
             g.pose().popMatrix();
         }
         return y + icon + (roll.claimMode ? 30 : 16);

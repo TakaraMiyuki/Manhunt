@@ -83,49 +83,54 @@ public final class ClientSkillWheel {
 
     // ==================== 轮盘界面 ====================
 
+    /** 技能选择条：横排展示在经验条上方，背景模糊，鼠标滑动引导选择，松开左键选定。 */
     public static final class SkillWheelScreen extends Screen {
-        private static final int CARD_ICON = 20;
-        private static final int DEAD_ZONE_SQ = 20 * 20;
+        private static final int CARD_ICON = 24;
+        private static final int CARD_GAP = 4;
 
         private final List<ItemStack> cards;
         private final int activeIndex;
         private int selected;
-        /** 上次鼠标坐标（用于渲染期重算选中）。 */
-        private double lastMouseX;
-        private double lastMouseY;
 
         SkillWheelScreen(List<ItemStack> cards, int activeIndex) {
-            super(Component.literal("技能轮盘"));
+            super(Component.literal("技能选择"));
             this.cards = cards;
-            this.activeIndex = activeIndex;
-            this.selected = activeIndex >= 0 && activeIndex < cards.size() ? activeIndex : 0;
+            this.activeIndex = activeIndex >= 0 && activeIndex < cards.size() ? activeIndex : 0;
+            this.selected = this.activeIndex;
         }
 
-        private int cardCount() {
+        private int rowCount() {
             return cards.size();
         }
 
-        private double step() {
-            return 360.0 / cardCount();
+        /** 卡牌行几何：横向居中，位于经验条上方。 */
+        private int rowWidth() {
+            return rowCount() * (CARD_ICON + CARD_GAP) - CARD_GAP + 8;
         }
 
-        private void updateSelection(int mouseX, int mouseY) {
-            int cx = width / 2;
-            int cy = height / 2;
-            double mx = mouseX - cx;
-            double my = mouseY - cy;
-            if (mx * mx + my * my < DEAD_ZONE_SQ) {
-                return; // 中心死区：保持当前选中
+        private int rowLeft() {
+            return (width - rowWidth()) / 2;
+        }
+
+        private int rowTop() {
+            return height - 59; // 经验条上方
+        }
+
+        private void updateSelection(double mouseX) {
+            int rel = (int) mouseX - rowLeft() - 4;
+            if (rel < 0) {
+                rel = 0;
             }
-            double mouseAngle = Math.toDegrees(Math.atan2(my, mx));
-            selected = Math.floorMod((int) Math.round((mouseAngle + 90.0) / step()), cardCount());
+            int cell = CARD_ICON + CARD_GAP;
+            selected = Math.min(rowCount() - 1, rel / cell);
+            if (selected < 0) {
+                selected = 0;
+            }
         }
 
         @Override
         public void mouseMoved(double x, double y) {
-            lastMouseX = x;
-            lastMouseY = y;
-            updateSelection((int) x, (int) y);
+            updateSelection(x);
         }
 
         @Override
@@ -148,25 +153,28 @@ public final class ClientSkillWheel {
         @Override
         public void extractRenderState(net.minecraft.client.gui.GuiGraphicsExtractor g,
                                        int mouseX, int mouseY, float partialTick) {
-            updateSelection(mouseX, mouseY);
-            int cx = width / 2;
-            int cy = height / 2;
-            int n = cardCount();
-            int radius = Math.max(60, n * 14);
+            // 与原版界面一致的背景模糊
+            this.extractBlurredBackground(g);
+            updateSelection(mouseX);
+
+            int left = rowLeft();
+            int top = rowTop();
             long now = Minecraft.getInstance().level != null ? Minecraft.getInstance().level.getGameTime() : 0;
 
-            // 背景暗化
-            g.fillGradient(0, 0, width, height, 0xA0000000, 0xA0000000);
-            // 中心盘
-            g.fill(cx - 4, cy - 4, cx + 4, cy + 4, 0xFF3A2E14);
+            // 选中卡信息：显示在卡牌行上方
+            ItemStack card = cards.get(selected);
+            String brief = Component.translatable(
+                card.getItem().getDescriptionId() + ".brief").getString();
+            String name = "§f" + card.getHoverName().getString()
+                + " §7(" + (selected + 1) + "/" + rowCount() + ")";
+            g.text(font, name, (width - font.width(name)) / 2, top - 24, 0xFFFFFFFF, true);
+            g.text(font, "§b" + brief, (width - font.width("§b" + brief)) / 2, top - 14, 0xFFFFFFFF, true);
 
-            double step = step();
-            for (int i = 0; i < n; i++) {
-                double angle = Math.toRadians(-90.0 + i * step);
-                int ix = cx + (int) Math.round(Math.cos(angle) * radius) - CARD_ICON / 2;
-                int iy = cy + (int) Math.round(Math.sin(angle) * radius) - CARD_ICON / 2;
-                g.fill(ix - 1, iy - 1, ix + CARD_ICON + 1, iy + CARD_ICON + 1, 0xFF1E1E1E);
-                g.item(cards.get(i), ix, iy);
+            // 卡牌行
+            for (int i = 0; i < rowCount(); i++) {
+                int ix = left + 4 + i * (CARD_ICON + CARD_GAP);
+                g.fill(ix - 1, top - 1, ix + CARD_ICON + 1, top + CARD_ICON + 1, 0xFF1E1E1E);
+                g.item(cards.get(i), ix, top);
                 int frame;
                 if (i == selected) {
                     // 选中：金色脉冲
@@ -177,24 +185,18 @@ public final class ClientSkillWheel {
                 } else {
                     frame = 0xFF555555;
                 }
-                g.fill(ix - 2, iy - 2, ix + CARD_ICON + 2, iy, frame);
-                g.fill(ix - 2, iy + CARD_ICON, ix + CARD_ICON + 2, iy + CARD_ICON + 2, frame);
-                g.fill(ix - 2, iy, ix, iy + CARD_ICON, frame);
-                g.fill(ix + CARD_ICON, iy, ix + CARD_ICON + 2, iy + CARD_ICON, frame);
+                g.fill(ix - 2, top - 2, ix + CARD_ICON + 2, top, frame);
+                g.fill(ix - 2, top + CARD_ICON, ix + CARD_ICON + 2, top + CARD_ICON + 2, frame);
+                g.fill(ix - 2, top, ix, top + CARD_ICON, frame);
+                g.fill(ix + CARD_ICON, top, ix + CARD_ICON + 2, top + CARD_ICON, frame);
                 if (i == activeIndex) {
-                    g.fill(ix + CARD_ICON / 2 - 1, iy + CARD_ICON + 4, ix + CARD_ICON / 2 + 1, iy + CARD_ICON + 6, 0xFF3CE13C);
+                    g.fill(ix + CARD_ICON / 2 - 1, top + CARD_ICON + 4,
+                        ix + CARD_ICON / 2 + 1, top + CARD_ICON + 6, 0xFF3CE13C);
                 }
             }
 
-            // 中央：选中卡信息
-            ItemStack card = cards.get(selected);
-            String brief = Component.translatable(
-                card.getItem().getDescriptionId() + ".brief").getString();
-            String name = "§f" + card.getHoverName().getString() + " §7(" + (selected + 1) + "/" + n + ")";
-            g.text(font, name, cx - font.width(name) / 2, cy - radius - 24, 0xFFFFFFFF, true);
-            g.text(font, "§b" + brief, cx - font.width("§b" + brief) / 2, cy + radius + 12, 0xFFFFFFFF, true);
             String hint = "§7滑动鼠标选择，松开左键选定，Esc 取消";
-            g.text(font, hint, cx - font.width(hint) / 2, cy + radius + 24, 0xFFB8B8B8, true);
+            g.text(font, hint, (width - font.width(hint)) / 2, top + CARD_ICON + 10, 0xFFB8B8B8, true);
         }
 
         private int withAlpha(int argb, float alpha) {

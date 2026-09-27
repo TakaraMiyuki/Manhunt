@@ -43,7 +43,7 @@ public final class GameConfig {
     /** 罗盘偏航提示：朝向偏离罗盘指向超过该角度（度）视为偏航。 */
     public static final double COMPASS_DEVIATION_ANGLE = 60.0;
     /** 罗盘偏航提示：持续偏航该时长（刻）后红色脉冲，修正方向解除。 */
-    public static final int COMPASS_DEVIATION_TICKS = 100;
+    public static final int COMPASS_DEVIATION_TICKS = 60;
     /** 玩家进食加速倍率（相对原版）。 */
     public static final double EAT_SPEED_FACTOR = 1.5;
     /** 技能库持有上限（张，单人调试模式不限）。 */
@@ -65,8 +65,8 @@ public final class GameConfig {
     public static final int CARD_WEIGHT_RAINBOW = 4;
     /** 技能栏固定于快捷栏最右一格（0-based）。 */
     public static final int CARD_SLOT = 8;
-    /** 技能切换最短间隔（刻），防止按住左键连续切换。 */
-    public static final int SKILL_SWITCH_COOLDOWN_TICKS = 10;
+    /** 技能切换最短间隔（刻）：仅防同一点击重复计数，不影响连点手感。 */
+    public static final int SKILL_SWITCH_COOLDOWN_TICKS = 3;
 
     // ==================== 检查点 ====================
     /** 相邻检查点距离范围（格），含 1 号距世界出生点。 */
