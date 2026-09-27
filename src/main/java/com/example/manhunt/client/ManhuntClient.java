@@ -67,8 +67,9 @@ public final class ManhuntClient {
     }
 
     /**
-     * 猎人士气条：屏幕上方的独立条状 UI，使用原版 bossbar 雪碧图（蓝色 182×5），
-     * 位置在原版 bossbar 区下方避让倒计时。进度 = 距下一档士气（阈值无封顶）。
+     * 猎人士气条：对齐屏幕上方原版 bossbar 位置（蓝色雪碧图 182×5）。
+     * 逃跑倒计时期间隐藏（倒计时 bossbar 占用同位置）。
+     * 进度 = 距下一档士气（阈值无封顶）。
      */
     private static void renderMoraleBar(GuiGraphicsExtractor g, DeltaTracker delta) {
         Minecraft mc = Minecraft.getInstance();
@@ -78,13 +79,16 @@ public final class ManhuntClient {
         if (!ManhuntClientState.isParticipant() || ManhuntClientState.isRunner()) {
             return; // 仅猎人显示
         }
+        if (ManhuntClientState.isEscapePhase()) {
+            return; // 逃跑倒计时：位置让给倒计时 bossbar
+        }
         int morale = ManhuntClientState.morale();
         int rewards = ManhuntClientState.moraleRewards();
         int next = threshold(rewards);
         int prev = rewards == 0 ? 0 : threshold(rewards - 1);
         float progress = net.minecraft.util.Mth.clamp((morale - prev) / (float) Math.max(1, next - prev), 0.0F, 1.0F);
         int x = g.guiWidth() / 2 - 91;
-        int y = 24;
+        int y = 12; // 与原版 bossbar 同位对齐
         // 标注：士气值 + 档数（1-based，无封顶）
         String label = "§b士气 " + morale + " §7· 档 " + (rewards + 1);
         g.text(mc.font, label, (g.guiWidth() - mc.font.width(label)) / 2, y - 10, 0xFFFFFFFF, true);
@@ -293,7 +297,7 @@ public final class ManhuntClient {
         event.register(com.example.manhunt.net.ManhuntRolePayload.TYPE,
             (payload, ctx) -> ManhuntClientState.update(payload.participant(), payload.runner(),
                 payload.skillReady(), payload.morale(), payload.moraleRewards(),
-                payload.skillIds(), payload.skillActive()));
+                payload.skillIds(), payload.skillActive(), payload.escapePhase()));
     }
 
     @SubscribeEvent

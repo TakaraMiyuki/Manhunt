@@ -259,7 +259,7 @@ public final class ManhuntGame {
             }
             // 通知客户端清除本地状态（角色/士气条/技能库）
             net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(p,
-                new com.example.manhunt.net.ManhuntRolePayload(false, false, false, 0, 0, List.of(), -1));
+                new com.example.manhunt.net.ManhuntRolePayload(false, false, false, 0, 0, List.of(), -1, false));
         }
         PENDING_HUNTER_RESPAWNS.clear();
         DeathHandler.clearAllHunterGear();
@@ -337,7 +337,8 @@ public final class ManhuntGame {
                 net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(p,
                     new com.example.manhunt.net.ManhuntRolePayload(participant, runner, skillReady,
                         MoraleManager.morale(), MoraleManager.rewards(),
-                        SkillSlotManager.skillIdList(p), SkillSlotManager.activeIndex(p)));
+                        SkillSlotManager.skillIdList(p), SkillSlotManager.activeIndex(p),
+                        phase == Phase.ESCAPE));
                 if (participant) {
                     CompassManager.ensureCompasses(p);
                     MileageManager.syncMeter(p);

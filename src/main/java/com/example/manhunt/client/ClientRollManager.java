@@ -250,11 +250,11 @@ public final class ClientRollManager {
             claimMarkedAndClose();
             return true;
         }
-        // 左键：暂时脱离抽奖界面（不写入操作提示）
+        // 左键：暂时脱离抽奖界面，同时不拦截原版左键操作（攻击/挖掘照常进行）
         if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT) {
             current.detached = true;
             uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 0.7F, 0.3F);
-            return true;
+            return false;
         }
         return false;
     }

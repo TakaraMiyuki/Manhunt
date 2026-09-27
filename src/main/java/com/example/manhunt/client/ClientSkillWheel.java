@@ -35,10 +35,6 @@ public final class ClientSkillWheel {
         if (mc.player == null || mc.level == null || mc.gui.screen() != null) {
             return false;
         }
-        // 抽奖界面脱离状态下保持正常操作
-        if (ClientRollManager.hasClaimSession() && ClientRollManager.isDetached()) {
-            return false;
-        }
         if (!ManhuntClientState.isParticipant() || !ManhuntClientState.isRunner()) {
             return false;
         }
@@ -174,7 +170,8 @@ public final class ClientSkillWheel {
             for (int i = 0; i < rowCount(); i++) {
                 int ix = left + 4 + i * (CARD_ICON + CARD_GAP);
                 g.fill(ix - 1, top - 1, ix + CARD_ICON + 1, top + CARD_ICON + 1, 0xFF1E1E1E);
-                g.item(cards.get(i), ix, top);
+                // 16×16 物品在 24×24 框内居中
+                g.item(cards.get(i), ix + (CARD_ICON - 16) / 2, top + (CARD_ICON - 16) / 2);
                 int frame;
                 if (i == selected) {
                     // 选中：金色脉冲

@@ -22,10 +22,12 @@ public final class ManhuntClientState {
     private static volatile List<String> skillIds = List.of();
     /** 当前激活的卡在技能库中的下标。 */
     private static volatile int skillActive;
+    /** 逃跑倒计时期间（士气条让位倒计时 bossbar）。 */
+    private static volatile boolean escapePhase;
 
     public static void update(boolean isParticipant, boolean isRunner, boolean hasReadySkill,
                               int moraleValue, int moraleRewardCount,
-                              List<String> skillIdList, int activeIndex) {
+                              List<String> skillIdList, int activeIndex, boolean escape) {
         participant = isParticipant;
         runner = isRunner;
         skillReady = hasReadySkill;
@@ -33,6 +35,7 @@ public final class ManhuntClientState {
         moraleRewards = moraleRewardCount;
         skillIds = List.copyOf(skillIdList);
         skillActive = activeIndex;
+        escapePhase = escape;
     }
 
     public static boolean isParticipant() {
@@ -84,6 +87,11 @@ public final class ManhuntClientState {
         return out;
     }
 
+    /** 是否处于逃跑倒计时期间（士气条隐藏避让）。 */
+    public static boolean isEscapePhase() {
+        return escapePhase;
+    }
+
     public static void clear() {
         participant = false;
         runner = false;
@@ -92,5 +100,6 @@ public final class ManhuntClientState {
         moraleRewards = 0;
         skillIds = List.of();
         skillActive = -1;
+        escapePhase = false;
     }
 }
