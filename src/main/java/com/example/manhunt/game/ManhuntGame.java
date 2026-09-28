@@ -422,6 +422,21 @@ public final class ManhuntGame {
                 activator.sendSystemMessage(Component.literal(
                     "§6[猎人游戏] §7技能库已集齐全部 14 张卡牌！"), true);
             }
+            // 人人有份：其余存活逃生者各抽一张（加权，不可重复抽取）
+            for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+                if (p == activator || !TeamUtil.isRunner(p) || isEliminated(p.getUUID())) {
+                    continue;
+                }
+                SkillCardsBridge.CardDraw bonus = SkillCardsBridge.drawRandom(rng, SkillSlotManager.ownedIds(p));
+                if (bonus != null) {
+                    SkillSlotManager.giveDrawnCard(p, bonus);
+                    sendRoll(p, LootRollPayload.TYPE_CARD,
+                        List.of(bonus.stack()), SkillCardsBridge.cardAccent(bonus));
+                }
+            }
+            if (aliveRunnerCount() > 1) {
+                broadcast(server, "§6[猎人游戏] §d全体逃生者各获得一张技能卡！");
+            }
         }
 
         // 超级抽奖：全体存活逃生者
