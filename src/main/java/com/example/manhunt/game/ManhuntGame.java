@@ -27,8 +27,11 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.BossEvent;
 import net.minecraft.world.level.GameType;
 import net.minecraft.world.level.Level;
+import net.minecraft.world.scores.Objective;
 import net.minecraft.world.scores.PlayerTeam;
+import net.minecraft.world.scores.ScoreHolder;
 import net.minecraft.world.scores.TeamColor;
+import net.minecraft.world.scores.criteria.ObjectiveCriteria;
 import net.neoforged.neoforge.event.tick.ServerTickEvent;
 
 /**
@@ -202,6 +205,8 @@ public final class ManhuntGame {
         }
         // 逃生者发光分色：每人一个独立颜色队伍（发光描边随队伍颜色）
         assignRunnerGlowTeams(server);
+        // 把当前对局人数写入记分板 manhunt_state（数据包可读，用于动态调整末影龙血量）
+        syncStateScores(server);
         if (solo) {
             broadcast(server, "§6[猎人游戏] §b单人调试模式开始（无猎人，死亡不结算）。");
         } else {
@@ -246,6 +251,13 @@ public final class ManhuntGame {
         SkillSlotManager.reset();
         ELIMINATED.clear();
         cleanupRunnerGlowTeams(server);
+        // 对局结束：清空状态分数（数据包侧后续召唤按 200 血处理）
+        ServerScoreboard scoreboard = server.getScoreboard();
+        Objective objective = scoreboard.getObjective("manhunt_state");
+        if (objective != null) {
+            scoreboard.getOrCreatePlayerScore(ScoreHolder.forNameOnly("alive_runners"), objective).set(0);
+            scoreboard.getOrCreatePlayerScore(ScoreHolder.forNameOnly("hunters"), objective).set(0);
+        }
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
             if (isParticipant(p.getUUID())) {
                 SkillCardsBridge.resetPersistentBonuses(p);
@@ -467,7 +479,7 @@ public final class ManhuntGame {
 
     private static void sendRoll(ServerPlayer p, int type, List<net.minecraft.world.item.ItemStack> items, int accent) {
         net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(p,
-            new LootRollPayload(type, items, accent, LootRollPayload.MODE_NEW));
+            new LootRollPayload(type, items, accent, LootRollPayload.MODE_NEW, null));
     }
 
     // ==================== 死亡与胜负 ====================
@@ -504,10 +516,23 @@ public final class ManhuntGame {
         return PENDING_HUNTER_RESPAWNS.containsKey(id);
     }
 
+    /** 把当前对局人数写入记分板 objective "manhunt_state"（数据包可读，用于动态调整末影龙血量等）。 */
+    private static void syncStateScores(MinecraftServer server) {
+        ServerScoreboard sb = server.getScoreboard();
+        Objective objective = sb.getObjective("manhunt_state");
+        if (objective == null) {
+            objective = sb.addObjective("manhunt_state", ObjectiveCriteria.DUMMY,
+                Component.literal("Manhunt 状态"), ObjectiveCriteria.RenderType.INTEGER, false, null);
+        }
+        sb.getOrCreatePlayerScore(ScoreHolder.forNameOnly("alive_runners"), objective).set(aliveRunnerCount());
+        sb.getOrCreatePlayerScore(ScoreHolder.forNameOnly("hunters"), objective).set(HUNTERS.size());
+    }
+
     /** 逃生者死亡：淘汰；全部淘汰则猎人获胜（单人调试模式除外）。 */
     public static void onRunnerDeath(MinecraftServer server, ServerPlayer deadRunner) {
         PendingRewardManager.discard(deadRunner.getUUID());
         ELIMINATED.add(deadRunner.getUUID());
+        syncStateScores(server); // 淘汰后刷新存活逃生者人数
         broadcast(server, "§6[猎人游戏] §a逃生者 §f" + deadRunner.getName().getString() + " §c被淘汰！"
             + " (剩余 " + aliveRunnerCount() + " 人)");
         if (!soloMode && aliveRunnerCount() == 0) {

@@ -61,6 +61,8 @@ public final class ClientRollManager {
     static final class Session {
         final int type;
         final int accentColor;
+        /** 自定义标题翻译键（null = 按类型显示默认标题）。 */
+        final String title;
         final long startTick;
         List<ItemStack> items;
         boolean claimMode;
@@ -72,10 +74,11 @@ public final class ClientRollManager {
         long nextScrollSound;
         int lockedCount;
 
-        Session(int type, List<ItemStack> items, int accentColor, long startTick) {
+        Session(int type, List<ItemStack> items, int accentColor, String title, long startTick) {
             this.type = type;
             this.items = items;
             this.accentColor = accentColor;
+            this.title = title;
             this.startTick = startTick;
             this.nextScrollSound = startTick + INTRO;
         }
@@ -128,12 +131,12 @@ public final class ClientRollManager {
         }
         if (payload.rollType() == LootRollPayload.TYPE_CARD) {
             cardQueue.add(new Session(payload.rollType(), new ArrayList<>(payload.items()),
-                payload.accentColor(), mc.level.getGameTime()));
+                payload.accentColor(), payload.title(), mc.level.getGameTime()));
             uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.35F, 0.35F);
             return;
         }
         current = new Session(payload.rollType(), new ArrayList<>(payload.items()),
-            payload.accentColor(), mc.level.getGameTime());
+            payload.accentColor(), payload.title(), mc.level.getGameTime());
         uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.35F, 0.35F);
     }
 
@@ -372,7 +375,9 @@ public final class ClientRollManager {
         g.fill(x0 - 2, barY - 1, x0 - 1, barY + icon + 1, border);
         g.fill(x0 + width + 1, barY - 1, x0 + width + 2, barY + icon + 1, border);
 
-        String title = roll.type == LootRollPayload.TYPE_SUPER ? "超级抽奖" : "资源抽奖";
+        String title = roll.title != null
+            ? net.minecraft.network.chat.Component.translatable(roll.title).getString()
+            : (roll.type == LootRollPayload.TYPE_SUPER ? "超级抽奖" : "资源抽奖");
         int textX = (g.guiWidth() - mc.font.width(title)) / 2;
         g.text(mc.font, title, textX, barY - 9, withAlpha(0xFFE8C844, alpha), true);
 
@@ -384,8 +389,8 @@ public final class ClientRollManager {
                 // 已标记：金色常驻边框；选中：白色细框游标；其余：微暗
                 if (roll.marked.contains(i)) {
                     // 标记框：2px 全框，颜色随抽奖类型（资源绿 / 超级金），实心不闪烁
-                    int mark = withAlpha(roll.type == LootRollPayload.TYPE_SUPER
-                        ? 0xFFFFD700 : 0xFF3CE13C, alpha);
+                    int mark = withAlpha(roll.title != null ? roll.accentColor
+                        : (roll.type == LootRollPayload.TYPE_SUPER ? 0xFFFFD700 : 0xFF3CE13C), alpha);
                     g.fill(sx - 2, barY - 2, sx + icon + 2, barY, mark);
                     g.fill(sx - 2, barY + icon, sx + icon + 2, barY + icon + 2, mark);
                     g.fill(sx - 2, barY, sx, barY + icon, mark);
@@ -393,8 +398,8 @@ public final class ClientRollManager {
                 }
                 if (i == roll.selected) {
                     // 选中框：资源抽奖为绿色（区别于超级抽奖的金色），2px 全框
-                    int sel = withAlpha(roll.type == LootRollPayload.TYPE_SUPER
-                        ? mixAlpha(0xFFFFFF00, pulse) : 0xFF3CE13C, alpha);
+                    int sel = withAlpha(roll.title != null ? mixAlpha(roll.accentColor, pulse)
+                        : (roll.type == LootRollPayload.TYPE_SUPER ? mixAlpha(0xFFFFFF00, pulse) : 0xFF3CE13C), alpha);
                     g.fill(sx - 2, barY - 2, sx + icon + 2, barY, sel);
                     g.fill(sx - 2, barY + icon, sx + icon + 2, barY + icon + 2, sel);
                     g.fill(sx - 2, barY, sx, barY + icon, sel);

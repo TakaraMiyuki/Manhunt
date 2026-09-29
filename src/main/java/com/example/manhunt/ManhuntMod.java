@@ -186,7 +186,7 @@ public final class ManhuntMod {
             io.netty.buffer.Unpooled.buffer(), registryAccess);
         var payload = new com.example.manhunt.net.LootRollPayload(
             com.example.manhunt.net.LootRollPayload.TYPE_SUPER, items, 0,
-            com.example.manhunt.net.LootRollPayload.MODE_NEW);
+            com.example.manhunt.net.LootRollPayload.MODE_NEW, null);
         com.example.manhunt.net.LootRollPayload.STREAM_CODEC.encode(buf, payload);
         if (buf.readableBytes() <= 0) {
             throw new IllegalStateException("payload 编码后为空");

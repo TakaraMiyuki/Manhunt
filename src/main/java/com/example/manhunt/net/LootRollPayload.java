@@ -2,6 +2,8 @@ package com.example.manhunt.net;
 
 import java.util.List;
 
+import javax.annotation.Nullable;
+
 import net.minecraft.network.RegistryFriendlyByteBuf;
 import net.minecraft.network.codec.ByteBufCodecs;
 import net.minecraft.network.codec.StreamCodec;
@@ -16,8 +18,10 @@ import net.minecraft.world.item.ItemStack;
  * @param items       展示物品（资源/超级抽奖为待领取奖励）
  * @param accentColor 强调色（ARGB）：边框/品级色
  * @param mode        0=新抽奖（重置领取会话） 1=领取刷新（原位更新剩余物品，空列表=关闭）
+ * @param title       自定义标题翻译键（null=按类型显示默认标题"资源抽奖/超级抽奖"）
  */
-public record LootRollPayload(int rollType, List<ItemStack> items, int accentColor, int mode)
+public record LootRollPayload(int rollType, List<ItemStack> items, int accentColor, int mode,
+                              @Nullable String title)
     implements CustomPacketPayload {
     public static final int TYPE_RESOURCE = 0;
     public static final int TYPE_SUPER = 1;
@@ -38,12 +42,17 @@ public record LootRollPayload(int rollType, List<ItemStack> items, int accentCol
             ITEM_LIST_CODEC.encode(buf, payload.items);
             ByteBufCodecs.VAR_INT.encode(buf, payload.accentColor);
             ByteBufCodecs.VAR_INT.encode(buf, payload.mode);
+            buf.writeBoolean(payload.title != null);
+            if (payload.title != null) {
+                ByteBufCodecs.STRING_UTF8.encode(buf, payload.title);
+            }
         },
         buf -> new LootRollPayload(
             ByteBufCodecs.VAR_INT.decode(buf),
             ITEM_LIST_CODEC.decode(buf),
             ByteBufCodecs.VAR_INT.decode(buf),
-            ByteBufCodecs.VAR_INT.decode(buf)));
+            ByteBufCodecs.VAR_INT.decode(buf),
+            buf.readBoolean() ? ByteBufCodecs.STRING_UTF8.decode(buf) : null));
 
     @Override
     public CustomPacketPayload.Type<? extends CustomPacketPayload> type() {

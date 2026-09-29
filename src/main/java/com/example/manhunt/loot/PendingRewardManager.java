@@ -27,7 +27,7 @@ import net.minecraft.world.item.ItemStack;
 public final class PendingRewardManager {
     private PendingRewardManager() {}
 
-    private record Pending(int type, List<ItemStack> remaining, int accentColor) {}
+    private record Pending(int type, List<ItemStack> remaining, int accentColor, String title) {}
 
     private static final Map<UUID, Pending> PENDING = new HashMap<>();
     /** 被顶替/积攒而延迟开启的普通资源抽奖（仅一个槽位）。 */
@@ -43,14 +43,19 @@ public final class PendingRewardManager {
      * </ul>
      */
     public static void start(ServerPlayer player, int type, List<ItemStack> items) {
-        start(player, type, items, accentOf(type));
+        start(player, type, items, accentOf(type), null);
+    }
+
+    /** 同 {@link #start(ServerPlayer, int, List, int, String)} 的带强调色版本（标题用类型默认）。 */
+    public static void start(ServerPlayer player, int type, List<ItemStack> items, int accentColor) {
+        start(player, type, items, accentColor, null);
     }
 
     /**
-     * 同 {@link #start(ServerPlayer, int, List, int)} 的带强调色版本：
-     * 抽奖 UI 边框/品级色使用调用方指定的 ARGB 颜色（并在待领取全程保持）。
+     * 带强调色与自定义标题的版本：抽奖 UI 边框/品级色使用调用方指定的 ARGB 颜色，
+     * 标题使用指定翻译键（两者在待领取全程保持，延迟重开亦然）。
      */
-    public static void start(ServerPlayer player, int type, List<ItemStack> items, int accentColor) {
+    public static void start(ServerPlayer player, int type, List<ItemStack> items, int accentColor, String title) {
         if (items.isEmpty()) {
             return;
         }
@@ -62,7 +67,7 @@ public final class PendingRewardManager {
                     "§7[猎人游戏] 上一轮抽奖的未领取奖励已放弃。"), true);
         } else if (existing != null && existing.type() == LootRollPayload.TYPE_SUPER) {
             // 超级进行中：新轮（普通或超级）保留到后面，不覆盖
-            DEFERRED.put(id, new Pending(type, new ArrayList<>(items), accentColor));
+            DEFERRED.put(id, new Pending(type, new ArrayList<>(items), accentColor, title));
             player.sendSystemMessage(Component.literal(
                     type == LootRollPayload.TYPE_SUPER
                         ? "§7[猎人游戏] 新一轮超级抽奖已排队，当前超级抽奖结束后自动开启。"
@@ -72,8 +77,8 @@ public final class PendingRewardManager {
             // 普通进行中触发的超级：超级立即顶替开启，普通轮保留
             DEFERRED.put(id, existing);
         }
-        PENDING.put(id, new Pending(type, new ArrayList<>(items), accentColor));
-        send(player, new LootRollPayload(type, items, accentColor, LootRollPayload.MODE_NEW));
+        PENDING.put(id, new Pending(type, new ArrayList<>(items), accentColor, title));
+        send(player, new LootRollPayload(type, items, accentColor, LootRollPayload.MODE_NEW, title));
     }
 
     /** 领取全部标记物品并关闭待领取，未标记物品丢弃（右键/↓ 提交）。 */
@@ -97,7 +102,7 @@ public final class PendingRewardManager {
         if (deferred != null) {
             PENDING.put(player.getUUID(), deferred);
             send(player, new LootRollPayload(deferred.type(), deferred.remaining(), deferred.accentColor(),
-                LootRollPayload.MODE_NEW));
+                LootRollPayload.MODE_NEW, deferred.title()));
             player.sendSystemMessage(Component.literal(
                     "§7[猎人游戏] 被保留的资源抽奖已开启。"), true);
         }
