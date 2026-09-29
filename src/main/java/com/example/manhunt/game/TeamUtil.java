@@ -56,7 +56,9 @@ public final class TeamUtil {
         // 时长大于刷新间隔，ambient=true 不显示粒子
         int dur = GameConfig.BUFF_REFRESH_INTERVAL_TICKS * 3;
         if (isRunner(p)) {
-            add(p, MobEffects.GLOWING, dur, 0); // 常驻发光：描边颜色由发光分色队伍决定
+            if (!ManhuntGame.isBounty()) {
+                add(p, MobEffects.GLOWING, dur, 0); // 经典模式：全员常驻发光（描边随分色队伍）
+            }
             TierSystem.RunnerStats s = TierSystem.runner();
             if (p.level().dimension() == Level.END) {
                 add(p, MobEffects.RESISTANCE, dur, s.endResistanceLevel() - 1);
@@ -67,6 +69,9 @@ public final class TeamUtil {
             } else {
                 add(p, MobEffects.RESISTANCE, dur, s.resistanceLevel() - 1);
                 add(p, MobEffects.HASTE, dur, s.hasteLevel() - 1);
+            }
+            if (ManhuntGame.isBounty() && SprintManager.isSprinting(p.getUUID())) {
+                SprintManager.applySpeed(p); // 超级疾跑：速度 II（覆盖档位速度）
             }
         } else {
             if (ManhuntGame.phase() == ManhuntGame.Phase.ESCAPE) {

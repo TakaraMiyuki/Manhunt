@@ -44,6 +44,10 @@ public final class ManhuntClient {
     public static final KeyMapping LOOT_CLAIM = new KeyMapping(
         "key.manhunt.loot_claim", KeyConflictContext.IN_GAME,
         InputConstants.Type.MOUSE, GLFW.GLFW_MOUSE_BUTTON_RIGHT, LOOT_CATEGORY);
+    /** 超级疾跑开关（赏金模式，默认左 Alt，可改键）。 */
+    public static final KeyMapping SPRINT_KEY = new KeyMapping(
+        "key.manhunt.super_sprint", KeyConflictContext.IN_GAME,
+        InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_LEFT_ALT, LOOT_CATEGORY);
 
 
     @SubscribeEvent
@@ -51,6 +55,7 @@ public final class ManhuntClient {
         event.registerCategory(LOOT_CATEGORY);
         event.register(LOOT_MARK);
         event.register(LOOT_CLAIM);
+        event.register(SPRINT_KEY);
     }
 
     @SubscribeEvent
@@ -67,9 +72,8 @@ public final class ManhuntClient {
     }
 
     /**
-     * 猎人士气条：对齐屏幕上方原版 bossbar 位置（蓝色雪碧图 182×5）。
-     * 逃跑倒计时期间隐藏（倒计时 bossbar 占用同位置）。
-     * 进度 = 距下一档士气（阈值无封顶）。
+     * 猎人量表：经典=士气（蓝），赏金=赏金（黄，金色观感）。对齐屏幕上方原版 bossbar 位置。
+     * 逃跑倒计时期间隐藏。进度 = 距下一档（阈值无封顶）。
      */
     private static void renderMoraleBar(GuiGraphicsExtractor g, DeltaTracker delta) {
         Minecraft mc = Minecraft.getInstance();
@@ -82,23 +86,29 @@ public final class ManhuntClient {
         if (ManhuntClientState.isEscapePhase()) {
             return; // 逃跑倒计时：位置让给倒计时 bossbar
         }
-        int morale = ManhuntClientState.morale();
+        boolean bounty = ManhuntClientState.isBountyMode();
+        int value = ManhuntClientState.morale();
         int rewards = ManhuntClientState.moraleRewards();
         int next = threshold(rewards);
         int prev = rewards == 0 ? 0 : threshold(rewards - 1);
-        float progress = net.minecraft.util.Mth.clamp((morale - prev) / (float) Math.max(1, next - prev), 0.0F, 1.0F);
+        float progress = net.minecraft.util.Mth.clamp((value - prev) / (float) Math.max(1, next - prev), 0.0F, 1.0F);
         int x = g.guiWidth() / 2 - 91;
         int y = 12; // 与原版 bossbar 同位对齐
-        // 标注：士气值 + 档数（1-based，无封顶）
-        String label = "§b士气 " + morale + " §7· 档 " + (rewards + 1);
+        String label = (bounty ? "§6赏金 " : "§b士气 ") + value + " §7· 档 " + (rewards + 1);
         g.text(mc.font, label, (g.guiWidth() - mc.font.width(label)) / 2, y - 10, 0xFFFFFFFF, true);
-        // 原版 bossbar 雪碧图（与 BossHealthOverlay 同款绘制）
+        // 原版 bossbar 雪碧图（赏金=黄 / 士气=蓝）
+        String color = bounty ? "yellow" : "blue";
         g.blitSprite(net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED,
-            Identifier.withDefaultNamespace("boss_bar/blue_background"), 182, 5, 0, 0, x, y, 182, 5);
+            Identifier.withDefaultNamespace("boss_bar/" + color + "_background"), 182, 5, 0, 0, x, y, 182, 5);
         int fill = net.minecraft.util.Mth.lerpDiscrete(progress, 0, 182);
         if (fill > 0) {
             g.blitSprite(net.minecraft.client.renderer.RenderPipelines.GUI_TEXTURED,
-                Identifier.withDefaultNamespace("boss_bar/blue_progress"), 182, 5, 0, 0, x, y, fill, 5);
+                Identifier.withDefaultNamespace("boss_bar/" + color + "_progress"), 182, 5, 0, 0, x, y, fill, 5);
+        }
+        // 超级疾跑状态提示（赏金模式，开启中）
+        if (bounty && ManhuntClientState.isSprinting()) {
+            String sprint = "§b超级疾跑中 §7(饥饿快速消耗)";
+            g.text(mc.font, sprint, (g.guiWidth() - mc.font.width(sprint)) / 2, y + 8, 0xFFFFFFFF, true);
         }
     }
 
@@ -297,13 +307,22 @@ public final class ManhuntClient {
         event.register(com.example.manhunt.net.ManhuntRolePayload.TYPE,
             (payload, ctx) -> ManhuntClientState.update(payload.participant(), payload.runner(),
                 payload.skillReady(), payload.morale(), payload.moraleRewards(),
-                payload.skillIds(), payload.skillActive(), payload.escapePhase()));
+                payload.skillIds(), payload.skillActive(), payload.escapePhase(),
+                payload.bountyMode(), payload.sprinting()));
     }
 
     @SubscribeEvent
     public static void onClientTick(ClientTickEvent.Post event) {
         ClientRollManager.tick();
         ClientSkillWheel.tick();
+        // 超级疾跑开关（按一下切换）
+        Minecraft mc = Minecraft.getInstance();
+        while (SPRINT_KEY.consumeClick()) {
+            if (mc.player != null && mc.level != null && mc.gui.screen() == null) {
+                net.neoforged.neoforge.client.network.ClientPacketDistributor.sendToServer(
+                    new com.example.manhunt.net.SprintTogglePayload(!ManhuntClientState.isSprinting()));
+            }
+        }
     }
 
     // ==================== 领取模式输入 ====================

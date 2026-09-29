@@ -11,6 +11,7 @@ import java.util.UUID;
 import com.example.manhunt.GameConfig;
 import com.example.manhunt.cards.SkillSlotManager;
 import com.example.manhunt.loot.PendingRewardManager;
+import com.example.manhunt.loot.SkillDrawManager;
 import com.example.manhunt.cards.SkillCardsBridge;
 import com.example.manhunt.item.CompassManager;
 import com.example.manhunt.net.LootRollPayload;
@@ -45,6 +46,8 @@ public final class ManhuntGame {
     public enum Phase { IDLE, ESCAPE, RUNNING, ENDED }
 
     private static Phase phase = Phase.IDLE;
+    /** 当前游戏模式（赏金模式下多检查点/三命/赏金量表生效）。 */
+    private static Mode mode = Mode.CLASSIC;
     private static final Set<UUID> HUNTERS = new HashSet<>();
     private static final Set<UUID> RUNNERS = new HashSet<>();
     private static final Set<UUID> ELIMINATED = new HashSet<>();
@@ -71,6 +74,20 @@ public final class ManhuntGame {
     private record HunterRespawn(long respawnAt, long spectateUntil) {}
 
     private static final Map<UUID, HunterRespawn> PENDING_HUNTER_RESPAWNS = new HashMap<>();
+
+    // ==================== 赏金模式状态 ====================
+    /** 赏金模式：同时存在的普通检查点（激活一个移除并生成新的；要塞阶段清空）。 */
+    private static final List<BlockPos> BOUNTY_CHECKPOINTS = new ArrayList<>();
+    /** 赏金模式：逃生者剩余命数。 */
+    private static final Map<UUID, Integer> LIVES = new HashMap<>();
+    /** 赏金模式：罗盘赦免截止时刻（死亡重生后 60 秒内不可被罗盘追踪）。 */
+    private static final Map<UUID, Long> BOUNTY_IMMUNE_UNTIL = new HashMap<>();
+    /** 赏金模式：逃生者重生计划（死亡 → 下一刻重生 → 传送至距死亡位置 300–500 格）。 */
+    private record RunnerRespawn(GlobalPos pos, long respawnAt) {}
+
+    private static final Map<UUID, RunnerRespawn> PENDING_RUNNER_RESPAWNS = new HashMap<>();
+    /** 头号赏金发光队伍（金色描边，仅标记者加入）。 */
+    private static final String BOUNTY_TEAM_NAME = "manhunt_bounty";
     /** 逃生者发光分色队伍前缀：发光描边颜色 = 队伍颜色（循环取色，不用红色）。 */
     private static final String GLOW_TEAM_PREFIX = "manhunt_glow_";
     private static final TeamColor[] GLOW_COLORS = {
@@ -81,6 +98,10 @@ public final class ManhuntGame {
     // ==================== 状态访问 ====================
 
     public static Phase phase() { return phase; }
+
+    public static Mode mode() { return mode; }
+
+    public static boolean isBounty() { return mode == Mode.BOUNTY; }
 
     public static boolean isRunning() { return phase == Phase.ESCAPE || phase == Phase.RUNNING; }
 
@@ -128,13 +149,57 @@ public final class ManhuntGame {
         strongholdPortalPos = null;
     }
 
+    // ==================== 赏金模式访问 ====================
+
+    public static List<BlockPos> bountyCheckpoints() { return BOUNTY_CHECKPOINTS; }
+
+    /** 赏金模式：地图同时存在的检查点上限（按逃生者人数查表）。 */
+    public static int bountyCheckpointLimit() {
+        int n = aliveRunnerCount();
+        int[] table = GameConfig.BOUNTY_CP_TABLE;
+        if (n <= 3) return table[0];
+        if (n <= 5) return table[1];
+        if (n <= 7) return table[2];
+        return table[3];
+    }
+
+    /** 赏金模式：激活末地要塞所需总里程档（逃生者数 × 3000）。 */
+    public static int bountyStrongholdTier() {
+        return Math.max(1, RUNNERS.size()) * GameConfig.BOUNTY_STRONGHOLD_PER_RUNNER;
+    }
+
+    /** 赏金模式：全体技能抽奖档位（要塞档 ÷ 6）。 */
+    public static int bountySkillTier() {
+        return Math.max(1, bountyStrongholdTier() / GameConfig.BOUNTY_SKILL_DIVISOR);
+    }
+
+    public static int lives(UUID id) { return LIVES.getOrDefault(id, 0); }
+
+    /** 罗盘赦免是否生效（死亡重生后 60 秒）。 */
+    public static boolean isCompassImmune(UUID id, MinecraftServer server) {
+        Long until = BOUNTY_IMMUNE_UNTIL.get(id);
+        return until != null && server.overworld().getGameTime() < until;
+    }
+
+    public static void setCompassImmune(MinecraftServer server, UUID id, long ticks) {
+        BOUNTY_IMMUNE_UNTIL.put(id, server.overworld().getGameTime() + ticks);
+    }
+
     // ==================== 生命周期 ====================
 
     /**
-     * 开局：分配队伍、生成首个检查点、进入逃跑倒计时。
+     * 开局：分配队伍、生成首个检查点、进入逃跑倒计时（经典模式）。
      * @return 错误提示；null 表示成功
      */
     public static String start(MinecraftServer server, Set<UUID> hunters, Set<UUID> runners, boolean solo) {
+        return start(server, hunters, runners, solo, Mode.CLASSIC);
+    }
+
+    /**
+     * 开局：分配队伍、生成检查点（经典=单链 / 赏金=多检查点）、进入逃跑倒计时。
+     * @return 错误提示；null 表示成功
+     */
+    public static String start(MinecraftServer server, Set<UUID> hunters, Set<UUID> runners, boolean solo, Mode m) {
         if (isRunning()) {
             return "游戏已在进行中，请先 /manhunt stop。";
         }
@@ -152,17 +217,32 @@ public final class ManhuntGame {
         PENDING_HUNTER_RESPAWNS.clear();
         DeathHandler.clearAllHunterGear();
         soloMode = solo;
+        mode = m;
         activatedCount = 0;
         currentCheckpoint = null;
         currentIsStronghold = false;
         lastCheckpoint = null;
         forceNextStronghold = false;
+        BOUNTY_CHECKPOINTS.clear();
+        BOUNTY_IMMUNE_UNTIL.clear();
+        PENDING_RUNNER_RESPAWNS.clear();
+        LIVES.clear();
+        for (UUID id : RUNNERS) {
+            LIVES.put(id, GameConfig.BOUNTY_RUNNER_LIVES);
+        }
         MileageManager.reset();
         MoraleManager.reset();
+        BountyManager.reset();
+        SprintManager.reset();
         SkillSlotManager.reset();
+        SkillDrawManager.reset();
         TierSystem.reset();
 
-        CheckpointManager.generateFirst(server);
+        if (isBounty()) {
+            CheckpointManager.generateBountyCheckpoints(server);
+        } else {
+            CheckpointManager.generateFirst(server);
+        }
 
         // 集合：所有在线参与者传送到世界出生点
         ServerLevel overworld = server.overworld();
@@ -194,17 +274,36 @@ public final class ManhuntGame {
             MileageManager.syncMeter(p);
             countdownBar.addPlayer(p);
             if (TeamUtil.isRunner(p)) {
+                if (isBounty()) {
+                    p.sendSystemMessage(Component.literal(
+                        "§e[赏金猎人] 你是 §a逃生者§e！共有 §f" + GameConfig.BOUNTY_RUNNER_LIVES + " 条命§e，"
+                            + "地图上有 " + BOUNTY_CHECKPOINTS.size() + " 个检查点（金色粒子圈）可自由选择前往。"));
+                    p.sendSystemMessage(Component.literal(
+                        "§e[赏金猎人] 你的里程将计入全队总里程池（当前档位 §f" + bountyStrongholdTier() + "§e）。"
+                            + "每移动 " + GameConfig.MILEAGE_PER_ROLL + " 格触发一次资源抽奖；按 §f左Alt§e 开启超级疾跑。"));
+                } else {
+                    p.sendSystemMessage(Component.literal(
+                        "§e[猎人游戏] 你是 §a逃生者§e！60 秒后猎人开始追杀。沿检查点链前进，里程达标后前往末地击杀末影龙！"));
+                    p.sendSystemMessage(Component.literal(
+                        "§e[猎人游戏] 每移动 " + GameConfig.MILEAGE_PER_ROLL + " 格触发一次资源抽奖；激活检查点可抽技能卡。"));
+                }
+            } else if (isBounty()) {
                 p.sendSystemMessage(Component.literal(
-                    "§e[猎人游戏] 你是 §a逃生者§e！60 秒后猎人开始追杀。沿检查点链前进，里程达标后前往末地击杀末影龙！"));
-                p.sendSystemMessage(Component.literal(
-                    "§e[猎人游戏] 每移动 " + GameConfig.MILEAGE_PER_ROLL + " 格触发一次资源抽奖；激活检查点可抽技能卡。"));
+                    "§e[赏金猎人] 你是 §c赏金猎人§e！60 秒倒计时结束后开始追杀。对逃生者造成伤害与击杀都会积累§6赏金§e，"
+                        + "赏金档位满即获得超级抽奖。击杀高赏金逃生者收益更高！"));
             } else {
                 p.sendSystemMessage(Component.literal(
                     "§e[猎人游戏] 你是 §c猎人§e！60 秒倒计时结束后开始追杀所有逃生者。对逃生者造成伤害会积累全队士气并获得超级抽奖。"));
             }
         }
-        // 逃生者发光分色：每人一个独立颜色队伍（发光描边随队伍颜色）
-        assignRunnerGlowTeams(server);
+        if (isBounty()) {
+            // 赏金模式：仅头号赏金逃生者发光（金色），由 BountyManager 每秒刷新；建立右侧赏金榜
+            BountyManager.setupSidebar(server);
+            BountyManager.refreshMarks(server);
+        } else {
+            // 经典模式：逃生者发光分色，每人一个独立颜色队伍（发光描边随队伍颜色）
+            assignRunnerGlowTeams(server);
+        }
         // 把当前对局人数写入记分板 manhunt_state（数据包可读，用于动态调整末影龙血量）
         syncStateScores(server);
         if (solo) {
@@ -231,9 +330,11 @@ public final class ManhuntGame {
 
     private static void cleanup(MinecraftServer server) {
         PendingRewardManager.depositAll(server);
+        SkillDrawManager.reset();
         phase = Phase.IDLE;
         escapeTicksLeft = 0;
         soloMode = false;
+        mode = Mode.CLASSIC;
         if (countdownBar != null) {
             for (ServerPlayer p : new ArrayList<>(countdownBar.getPlayers())) {
                 countdownBar.removePlayer(p);
@@ -248,9 +349,12 @@ public final class ManhuntGame {
         }
         MileageManager.reset();
         MoraleManager.reset();
+        BountyManager.reset(server);
+        SprintManager.reset();
         SkillSlotManager.reset();
         ELIMINATED.clear();
         cleanupRunnerGlowTeams(server);
+        cleanupBountyState(server);
         // 对局结束：清空状态分数（数据包侧后续召唤按 200 血处理）
         ServerScoreboard scoreboard = server.getScoreboard();
         Objective objective = scoreboard.getObjective("manhunt_state");
@@ -271,7 +375,7 @@ public final class ManhuntGame {
             }
             // 通知客户端清除本地状态（角色/士气条/技能库）
             net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(p,
-                new com.example.manhunt.net.ManhuntRolePayload(false, false, false, 0, 0, List.of(), -1, false));
+                new com.example.manhunt.net.ManhuntRolePayload(false, false, false, 0, 0, List.of(), -1, false, false, false));
         }
         PENDING_HUNTER_RESPAWNS.clear();
         DeathHandler.clearAllHunterGear();
@@ -279,6 +383,23 @@ public final class ManhuntGame {
         server.overworld().dimensionType().defaultClock().ifPresent(clock ->
             server.overworld().clockManager().setRate(clock, 1.0F));
         ManhuntStateIO.save(server);
+    }
+
+    /** 赏金模式状态清理：检查点列表、命数、赦免、重生计划、赏金发光队伍。 */
+    private static void cleanupBountyState(MinecraftServer server) {
+        BOUNTY_CHECKPOINTS.clear();
+        BOUNTY_IMMUNE_UNTIL.clear();
+        PENDING_RUNNER_RESPAWNS.clear();
+        LIVES.clear();
+        ServerScoreboard sb = server.getScoreboard();
+        PlayerTeam team = sb.getPlayerTeam(BOUNTY_TEAM_NAME);
+        if (team != null) {
+            sb.removePlayerTeam(team);
+        }
+        Objective sidebar = sb.getObjective("manhunt_bounty");
+        if (sidebar != null) {
+            sb.removeObjective(sidebar);
+        }
     }
 
     /** 倒计时结束，猎人解禁。 */
@@ -316,6 +437,7 @@ public final class ManhuntGame {
     public static void onServerTick(ServerTickEvent.Post event) {
         MinecraftServer server = event.getServer();
         processPendingRespawns(server);
+        processPendingRunnerRespawns(server);
 
         if (phase == Phase.ESCAPE) {
             escapeTicksLeft--;
@@ -336,6 +458,14 @@ public final class ManhuntGame {
         // 里程累计（每刻）
         MileageManager.tick(server);
 
+        // 赏金模式：超级疾跑饥饿消耗（每刻）+ 赏金榜/头号标记/池档位（每秒）
+        if (isBounty()) {
+            SprintManager.tick(server);
+            if (tickCounter % 20 == 0) {
+                BountyManager.tick(server);
+            }
+        }
+
         // 昼夜 3:7：夜间时钟加速（每秒核对，仅速率变化时发包）
         if (tickCounter % 20 == 0) {
             updateDaylightRate(server);
@@ -348,9 +478,11 @@ public final class ManhuntGame {
                 boolean skillReady = participant && runner && SkillSlotManager.hasReadyCard(p);
                 net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(p,
                     new com.example.manhunt.net.ManhuntRolePayload(participant, runner, skillReady,
-                        MoraleManager.morale(), MoraleManager.rewards(),
+                        isBounty() ? BountyManager.bounty() : MoraleManager.morale(),
+                        isBounty() ? BountyManager.rewards() : MoraleManager.rewards(),
                         SkillSlotManager.skillIdList(p), SkillSlotManager.activeIndex(p),
-                        phase == Phase.ESCAPE));
+                        phase == Phase.ESCAPE,
+                        isBounty(), runner && SprintManager.isSprinting(p.getUUID())));
                 if (participant) {
                     CompassManager.ensureCompasses(p);
                     MileageManager.syncMeter(p);
@@ -386,6 +518,10 @@ public final class ManhuntGame {
     }
 
     private static void updateCheckpointBossbar(MinecraftServer server) {
+        if (isBounty()) {
+            updateBountyBossbar(server);
+            return;
+        }
         BlockPos cp = currentCheckpoint;
         if (cp == null) {
             checkpointBar.setName(Component.literal("§d前往末地击杀§5末影龙§d！"));
@@ -404,10 +540,83 @@ public final class ManhuntGame {
         checkpointBar.setProgress(Math.max(0.05F, 1.0F - Math.min(1.0F, dist / 1000.0F)));
     }
 
+    /** 赏金模式 bossbar：剩余检查点数 + 总里程池进度（进度条 = 距要塞档）。 */
+    private static void updateBountyBossbar(MinecraftServer server) {
+        if (currentCheckpoint == null && BOUNTY_CHECKPOINTS.isEmpty()) {
+            checkpointBar.setName(Component.literal("§d前往末地击杀§5末影龙§d！"));
+            checkpointBar.setProgress(1.0F);
+            return;
+        }
+        if (currentIsStronghold) {
+            checkpointBar.setName(Component.literal("§d末地要塞 · 打开传送门！"));
+            checkpointBar.setProgress(1.0F);
+            return;
+        }
+        int tier = bountyStrongholdTier();
+        long pool = MileageManager.poolTotal();
+        checkpointBar.setName(Component.literal(
+            "§e检查点 ×" + BOUNTY_CHECKPOINTS.size() + " §7| §6总里程 §f" + pool + "§7/§f" + tier));
+        checkpointBar.setProgress(Math.max(0.03F, Math.min(1.0F, pool / (float) tier)));
+    }
+
     // ==================== 检查点激活 ====================
 
-    /** 由 CheckpointManager 在激活判定后调用：结算奖励并记录。 */
+    /** 由 CheckpointManager 在激活判定后调用：结算奖励并记录（经典模式）。 */
     public static void onCheckpointActivated(MinecraftServer server, ServerPlayer activator, boolean isStronghold) {
+        if (isBounty()) {
+            onBountyCheckpointActivated(server, activator, isStronghold);
+            return;
+        }
+        onClassicCheckpointActivated(server, activator, isStronghold);
+    }
+
+    /** 赏金模式激活：仅激活者超级抽奖；要塞激活 → 全员彩卡 + 进入末地阶段。 */
+    private static void onBountyCheckpointActivated(MinecraftServer server, ServerPlayer activator, boolean isStronghold) {
+        activatedCount++;
+        lastCheckpoint = currentCheckpoint;
+        if (currentCheckpoint != null) {
+            CheckpointManager.markActivated(currentCheckpoint, server);
+        }
+        String label = isStronghold ? "§d末地要塞" : "§e一个检查点";
+        broadcast(server, "§6[赏金猎人] §a逃生者 §f" + activator.getName().getString() + " §a激活了" + label + "！");
+
+        if (isStronghold) {
+            // 要塞激活：全员彩卡（无超级抽奖）+ 开门物资
+            if (SkillCardsBridge.available()) {
+                net.minecraft.util.RandomSource rng = net.minecraft.util.RandomSource.create();
+                for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+                    if (!TeamUtil.isRunner(p) || isEliminated(p.getUUID())) {
+                        continue;
+                    }
+                    SkillCardsBridge.CardDraw draw = SkillCardsBridge.drawRainbow(rng, SkillSlotManager.ownedIds(p));
+                    if (draw != null) {
+                        SkillSlotManager.giveDrawnCard(p, draw);
+                        sendRoll(p, LootRollPayload.TYPE_CARD,
+                            List.of(draw.stack()), SkillCardsBridge.cardAccent(draw));
+                    }
+                }
+            }
+            for (ServerPlayer p : server.getPlayerList().getPlayers()) {
+                if (TeamUtil.isRunner(p) && !isEliminated(p.getUUID())) {
+                    var eyes = new net.minecraft.world.item.ItemStack(net.minecraft.world.item.Items.ENDER_EYE, 12);
+                    if (!com.example.manhunt.util.InvUtil.safeAdd(p, eyes) && !eyes.isEmpty()) {
+                        p.drop(eyes, false);
+                        p.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                            "§c[赏金猎人] 背包已满，部分末影之眼未拾取，已掉落在脚下！"), false);
+                    }
+                }
+            }
+            broadcast(server, "§6[赏金猎人] §d全员获得彩卡与末影之眼 ×12，开启传送门！进入末地后将不再有复活机会！");
+            ManhuntStateIO.save(server);
+            return;
+        }
+        // 普通检查点：仅激活者超级抽奖
+        com.example.manhunt.loot.LootRoller.superRoll(activator);
+        ManhuntStateIO.save(server);
+    }
+
+    /** 经典模式激活：激活者抽卡 + 全员抽卡 + 全员超级抽奖。 */
+    private static void onClassicCheckpointActivated(MinecraftServer server, ServerPlayer activator, boolean isStronghold) {
         activatedCount++;
         lastCheckpoint = currentCheckpoint;
         if (currentCheckpoint != null) {
@@ -528,17 +737,72 @@ public final class ManhuntGame {
         sb.getOrCreatePlayerScore(ScoreHolder.forNameOnly("hunters"), objective).set(HUNTERS.size());
     }
 
-    /** 逃生者死亡：淘汰；全部淘汰则猎人获胜（单人调试模式除外）。 */
+    /** 逃生者死亡：经典=直接淘汰；赏金=扣命数（末地内或命数耗尽才淘汰），复活并失去 1/3 里程。 */
     public static void onRunnerDeath(MinecraftServer server, ServerPlayer deadRunner) {
+        onRunnerDeath(server, deadRunner, null);
+    }
+
+    public static void onRunnerDeath(MinecraftServer server, ServerPlayer deadRunner, ServerPlayer killer) {
+        // 赏金击杀结算（任意一条命被击杀都计；末地内改为击杀者回血）
+        if (isBounty() && killer != null && TeamUtil.isHunter(killer)) {
+            boolean inEnd = deadRunner.level().dimension() == Level.END;
+            if (inEnd) {
+                float heal = killer.getMaxHealth() * (float) GameConfig.BOUNTY_END_HEAL;
+                killer.heal(heal);
+                killer.sendSystemMessage(Component.literal(
+                    "§6[赏金猎人] §a末地击杀！恢复 " + Math.round(GameConfig.BOUNTY_END_HEAL * 100) + "% 生命（+"
+                        + String.format("%.0f", heal) + "）"), true);
+            } else {
+                long base = MileageManager.mileage(deadRunner.getUUID()) / GameConfig.BOUNTY_KILL_DIVISOR;
+                double mult = BountyManager.killMultiplier(server, deadRunner.getUUID());
+                BountyManager.addBounty(server, (int) Math.max(1, Math.round(base * mult)));
+                killer.sendSystemMessage(Component.literal(
+                    "§6[赏金猎人] §a击杀 §f" + deadRunner.getName().getString()
+                        + "§a！赏金 +" + Math.round(base * mult)
+                        + (mult > 1.0 ? " §7(基础 " + base + " ×" + mult + ")" : "")), true);
+            }
+        }
+        if (isBounty() && !soloMode && deadRunner.level().dimension() != Level.END) {
+            int lives = LIVES.getOrDefault(deadRunner.getUUID(), 1) - 1;
+            LIVES.put(deadRunner.getUUID(), Math.max(0, lives));
+            if (lives > 0) {
+                // 还有命：失去 1/3 里程 + 自动重生（距死亡位置 300–500 格）+ 罗盘赦免
+                long before = MileageManager.mileage(deadRunner.getUUID());
+                long after = before - Math.round(before * GameConfig.BOUNTY_MILEAGE_DEATH_FRACTION);
+                MileageManager.setMileage(deadRunner, Math.max(0, after));
+                scheduleRunnerRespawn(server, deadRunner);
+                setCompassImmune(server, deadRunner.getUUID(), GameConfig.BOUNTY_COMPASS_IMMUNITY_TICKS);
+                broadcast(server, "§6[赏金猎人] §a逃生者 §f" + deadRunner.getName().getString()
+                    + " §c被击杀！§7剩余命数 §f" + lives
+                    + " §7| 里程 -" + (before - after)
+                    + (killer instanceof ServerPlayer k ? " §7| 赏金猎人 §f" + k.getName().getString() : ""));
+                ManhuntStateIO.save(server);
+                return;
+            }
+        }
         PendingRewardManager.discard(deadRunner.getUUID());
         ELIMINATED.add(deadRunner.getUUID());
         syncStateScores(server); // 淘汰后刷新存活逃生者人数
-        broadcast(server, "§6[猎人游戏] §a逃生者 §f" + deadRunner.getName().getString() + " §c被淘汰！"
-            + " (剩余 " + aliveRunnerCount() + " 人)");
+        if (isBounty()) {
+            broadcast(server, "§6[赏金猎人] §a逃生者 §f" + deadRunner.getName().getString() + " §c被淘汰！"
+                + (deadRunner.level().dimension() == Level.END ? " §7（末地死亡无复活）" : " §7（命数耗尽）")
+                + " (剩余 " + aliveRunnerCount() + " 人)");
+        } else {
+            broadcast(server, "§6[猎人游戏] §a逃生者 §f" + deadRunner.getName().getString() + " §c被淘汰！"
+                + " (剩余 " + aliveRunnerCount() + " 人)");
+        }
         if (!soloMode && aliveRunnerCount() == 0) {
-            endGame(server, "§c猎人获胜！所有逃生者已被淘汰。");
+            endGame(server, isBounty() ? "§c赏金猎人获胜！所有逃生者已被淘汰。"
+                : "§c猎人获胜！所有逃生者已被淘汰。");
         }
         ManhuntStateIO.save(server);
+    }
+
+    /** 赏金模式：规划逃生者重生（下一刻强制重生 → 传送至距死亡位置 300–500 格地表）。 */
+    private static void scheduleRunnerRespawn(MinecraftServer server, ServerPlayer deadRunner) {
+        net.minecraft.core.GlobalPos pos = RespawnSelector.selectRunnerRespawn(server, deadRunner);
+        PENDING_RUNNER_RESPAWNS.put(deadRunner.getUUID(),
+            new RunnerRespawn(pos, server.overworld().getGameTime() + 2L));
     }
 
     /** 末影龙死亡 → 逃生者胜利。 */
@@ -619,6 +883,50 @@ public final class ManhuntGame {
     }
 
     // ==================== 昼夜与发光队伍 ====================
+
+    /** 赏金模式逃生者重生：强制重生（跳过死亡界面）→ 传送至预定复活点 → 生存模式。 */
+    private static void processPendingRunnerRespawns(MinecraftServer server) {
+        if (PENDING_RUNNER_RESPAWNS.isEmpty()) {
+            return;
+        }
+        long now = server.overworld().getGameTime();
+        List<UUID> done = new ArrayList<>();
+        for (Map.Entry<UUID, RunnerRespawn> e : PENDING_RUNNER_RESPAWNS.entrySet()) {
+            ServerPlayer p = server.getPlayerList().getPlayer(e.getKey());
+            if (p == null) {
+                continue; // 离线：重连后继续
+            }
+            if (!p.isAlive()) {
+                if (now >= e.getValue().respawnAt()) {
+                    p.connection.handleClientCommand(new ServerboundClientCommandPacket(
+                        ServerboundClientCommandPacket.Action.PERFORM_RESPAWN));
+                }
+                continue;
+            }
+            GlobalPos pos = e.getValue().pos();
+            ServerLevel level = server.getLevel(pos.dimension());
+            net.minecraft.core.BlockPos bp = pos.pos();
+            if (level != null) {
+                p.teleportTo(level, bp.getX() + 0.5, bp.getY() + 1, bp.getZ() + 0.5,
+                    Set.of(), p.getYRot(), p.getXRot(), false);
+            }
+            TeamUtil.applyBaseAttributes(p);
+            TeamUtil.fullyRestore(p);
+            TeamUtil.refreshBuffs(p);
+            p.setGameMode(GameType.SURVIVAL);
+            MileageManager.syncMeter(p);
+            p.sendSystemMessage(Component.literal(
+                "§6[赏金猎人] §a你已在复活点复活（§f" + bp.getX() + ", " + bp.getY() + ", " + bp.getZ()
+                    + "§a），60 秒内罗盘无法追踪你。"));
+            done.add(e.getKey());
+        }
+        for (UUID id : done) {
+            PENDING_RUNNER_RESPAWNS.remove(id);
+        }
+        if (!done.isEmpty()) {
+            ManhuntStateIO.save(server);
+        }
+    }
 
     /** 昼夜 3:7（日:夜 = 7:3）：夜间时钟加速，仅在速率变化时调用 setRate。 */
     private static void updateDaylightRate(MinecraftServer server) {
@@ -713,7 +1021,8 @@ public final class ManhuntGame {
 
     static void restoreState(Phase p, Set<UUID> hunters, Set<UUID> runners, Set<UUID> eliminated,
                              int activated, BlockPos currentCp, boolean stronghold,
-                             BlockPos lastCp, boolean solo) {
+                             BlockPos lastCp, boolean solo, Mode m,
+                             Map<UUID, Integer> lives, List<BlockPos> bountyCps, long pool) {
         phase = p;
         HUNTERS.clear();
         HUNTERS.addAll(hunters);
@@ -726,15 +1035,28 @@ public final class ManhuntGame {
         currentIsStronghold = stronghold && currentCp != null;
         lastCheckpoint = lastCp;
         soloMode = solo;
+        mode = m;
         escapeTicksLeft = 0;
+        BOUNTY_CHECKPOINTS.clear();
+        BOUNTY_CHECKPOINTS.addAll(bountyCps);
+        LIVES.clear();
+        LIVES.putAll(lives);
+        MileageManager.restorePool(pool);
     }
+
+    static Map<UUID, Integer> rawLives() { return LIVES; }
+
+    static List<BlockPos> rawBountyCheckpoints() { return BOUNTY_CHECKPOINTS; }
 
     static void reattachBossbars(MinecraftServer server) {
         if (phase == Phase.RUNNING) {
             checkpointBar = new ServerBossEvent(UUID.randomUUID(),
                 Component.literal("检查点进度"),
                 BossEvent.BossBarColor.YELLOW, BossEvent.BossBarOverlay.PROGRESS);
-            checkpointBar.setProgress(Math.min(1.0F, activatedCount / 10.0F));
+            if (isBounty()) {
+                BountyManager.setupSidebar(server);
+                BountyManager.refreshMarks(server);
+            }
             for (ServerPlayer p : server.getPlayerList().getPlayers()) {
                 if (TeamUtil.isRunner(p) && !isEliminated(p.getUUID())) {
                     checkpointBar.addPlayer(p);

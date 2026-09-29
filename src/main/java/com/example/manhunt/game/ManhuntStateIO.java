@@ -30,6 +30,7 @@ public final class ManhuntStateIO {
             JsonObject root = new JsonObject();
             root.addProperty("phase", ManhuntGame.rawPhase().name());
             root.addProperty("solo", ManhuntGame.rawSoloMode());
+            root.addProperty("mode", ManhuntGame.mode().name());
             root.addProperty("activated", ManhuntGame.activatedCount());
             root.add("hunters", uuidList(ManhuntGame.hunters()));
             root.add("runners", uuidList(ManhuntGame.runners()));
@@ -55,6 +56,23 @@ public final class ManhuntStateIO {
             root.addProperty("morale", MoraleManager.morale());
             root.addProperty("moraleRewards", MoraleManager.rewards());
             root.add("skills", stringMap(com.example.manhunt.cards.SkillSlotManager.snapshotIds()));
+            if (ManhuntGame.isBounty()) {
+                root.addProperty("pool", MileageManager.poolTotal());
+                var lives = new JsonObject();
+                for (UUID id : ManhuntGame.runners()) {
+                    lives.addProperty(id.toString(), ManhuntGame.lives(id));
+                }
+                root.add("lives", lives);
+                var cps = new com.google.gson.JsonArray();
+                for (BlockPos cp : ManhuntGame.bountyCheckpoints()) {
+                    cps.add(encodePos(cp));
+                }
+                root.add("bountyCheckpoints", cps);
+                root.addProperty("bounty", BountyManager.bounty());
+                root.addProperty("bountyRewards", BountyManager.rewards());
+                root.addProperty("bountySkillTierMark", BountyManager.lastSkillTier());
+                root.add("bountyMarked", uuidList(new HashSet<>(BountyManager.marked())));
+            }
 
             Path file = path(server);
             Files.createDirectories(file.getParent());
@@ -87,9 +105,28 @@ public final class ManhuntStateIO {
                 ? decodePos(root.getAsJsonObject("lastCheckpoint")) : null;
             int activated = root.get("activated").getAsInt();
             boolean solo = root.has("solo") && root.get("solo").getAsBoolean();
+            Mode mode = root.has("mode")
+                ? Mode.valueOf(root.get("mode").getAsString()) : Mode.CLASSIC;
+
+            Map<UUID, Integer> lives = new HashMap<>();
+            if (root.has("lives")) {
+                for (var e : root.getAsJsonObject("lives").entrySet()) {
+                    try {
+                        lives.put(UUID.fromString(e.getKey()), e.getValue().getAsInt());
+                    } catch (IllegalArgumentException ignored) {
+                    }
+                }
+            }
+            java.util.List<BlockPos> bountyCps = new java.util.ArrayList<>();
+            if (root.has("bountyCheckpoints")) {
+                for (var el : root.getAsJsonArray("bountyCheckpoints")) {
+                    bountyCps.add(decodePos(el.getAsJsonObject()));
+                }
+            }
 
             ManhuntGame.restoreState(restored, hunters, runners, eliminated, activated,
-                current, stronghold, last, solo);
+                current, stronghold, last, solo, mode, lives, bountyCps,
+                root.has("pool") ? root.get("pool").getAsLong() : 0L);
             if (root.has("portal")) {
                 ManhuntGame.setStrongholdPortalPos(net.minecraft.core.GlobalPos.of(
                     net.minecraft.world.level.Level.OVERWORLD, decodePos(root.getAsJsonObject("portal"))));
@@ -115,6 +152,14 @@ public final class ManhuntStateIO {
             }
             MileageManager.restore(mileage, rolls);
             MoraleManager.restore(root.get("morale").getAsInt(), root.get("moraleRewards").getAsInt());
+            if (ManhuntGame.mode() == Mode.BOUNTY) {
+                java.util.List<UUID> marked = new java.util.ArrayList<>(readUuids(root.get("bountyMarked")));
+                BountyManager.restore(
+                    root.has("bounty") ? root.get("bounty").getAsInt() : 0,
+                    root.has("bountyRewards") ? root.get("bountyRewards").getAsInt() : 0,
+                    marked,
+                    root.has("bountySkillTierMark") ? root.get("bountySkillTierMark").getAsLong() : 0L);
+            }
             if (root.has("skills")) {
                 Map<UUID, java.util.List<String>> skills = new HashMap<>();
                 for (var e : root.getAsJsonObject("skills").entrySet()) {

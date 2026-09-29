@@ -57,6 +57,47 @@ public final class GameConfig {
     /** 夜间判定：时钟时间 ≥ 该值视为夜晚（原版 NIGHT 标记）。 */
     public static final long NIGHT_START_TICK = 13000L;
 
+    // ==================== 赏金猎人模式 ====================
+    /** 地图同时存在的检查点数：逃生者 ≤3 / 4–5 / 6–7 / ≥8 → 2/3/4/5。 */
+    public static final int[] BOUNTY_CP_TABLE = {2, 3, 4, 5};
+    /** 检查点环带：距出生点 400–600 格，互相间隔至少该值。 */
+    public static final int BOUNTY_CP_SPACING = 400;
+    /** 激活末地要塞检查点所需总里程档 = 逃生者数 × 该值。 */
+    public static final int BOUNTY_STRONGHOLD_PER_RUNNER = 3000;
+    /** 全体技能抽奖档位 = 要塞档 ÷ 该值（进末地前最多 6 次）。 */
+    public static final int BOUNTY_SKILL_DIVISOR = 6;
+    /** 逃生者初始命数。 */
+    public static final int BOUNTY_RUNNER_LIVES = 3;
+    /** 死亡失去当前里程的比例。 */
+    public static final double BOUNTY_MILEAGE_DEATH_FRACTION = 1.0 / 3.0;
+    /** 复活位置：距死亡位置 300–500 格随机方向地表。 */
+    public static final int BOUNTY_RESPAWN_MIN = 300;
+    public static final int BOUNTY_RESPAWN_MAX = 500;
+    /** 死亡后罗盘赦免时长（刻，60 秒）。 */
+    public static final int BOUNTY_COMPASS_IMMUNITY_TICKS = 1200;
+    /** 猎人对逃生者每造成 1 点伤害获得的赏金。 */
+    public static final int BOUNTY_DAMAGE_FACTOR = 3;
+    /** 击杀赏金 = 死者里程 ÷ 该值。 */
+    public static final int BOUNTY_KILL_DIVISOR = 3;
+    /** 赏金量表档位（猎人经验条）：前期靠伤害、后期靠大额击杀，档距前紧后松。 */
+    public static final int[] BOUNTY_TIERS = {300, 800, 1600, 2800, 4400, 6500};
+    /** 末档之后每档固定增加。 */
+    public static final int BOUNTY_TIER_STEP_AFTER = 2500;
+    /** 末地内击杀逃生者的回复比例（不给赏金）。 */
+    public static final double BOUNTY_END_HEAL = 0.20;
+    /** 头号赏金标记数量：逃生者 ≤3 / 4–7 / ≥8 → 1 / 2 / 3。 */
+    public static final int[] BOUNTY_MARK_TABLE = {1, 2, 3};
+    /** 头号赏金击杀倍率（按标记名次 1/2/3；首名倍率随人数变化见 BOUNTY_MULT_FIRST）。 */
+    public static final double BOUNTY_MULT_RANK2 = 1.25;
+    public static final double BOUNTY_MULT_RANK1_SMALL = 1.5; // 逃生者 ≤7
+    public static final double BOUNTY_MULT_RANK1_LARGE = 2.0; // 逃生者 ≥8
+    public static final double BOUNTY_MULT_RANK3_SMALL = 1.8; // 逃生者 6–7
+    public static final double BOUNTY_MULT_RANK3_LARGE = 2.0; // 逃生者 ≥8
+    /** 超级疾跑：饥饿消耗间隔（刻，0.5 秒 1 点）。 */
+    public static final int SPRINT_HUNGER_INTERVAL_TICKS = 10;
+    /** 技能三选一的 UI accent（紫色）。 */
+    public static final int SKILL_CHOICE_ACCENT = 0xFFB266FF;
+
     // ==================== 技能卡 ====================
     /** 抽卡权重：普通/稀有/黑卡/彩卡（黑卡与稀有同权；合计任意，按比例分配）。 */
     public static final int CARD_WEIGHT_COMMON = 54;

@@ -26,6 +26,8 @@ public record LootRollPayload(int rollType, List<ItemStack> items, int accentCol
     public static final int TYPE_RESOURCE = 0;
     public static final int TYPE_SUPER = 1;
     public static final int TYPE_CARD = 2;
+    /** 技能三选一（赏金模式，独立 UI 与单选确认交互）。 */
+    public static final int TYPE_SKILL = 3;
     public static final int MODE_NEW = 0;
     public static final int MODE_REFRESH = 1;
 

@@ -101,6 +101,8 @@ public final class ClientRollManager {
 
     /** 主会话：资源/超级抽奖（动画 → 领取）。 */
     private static Session current;
+    /** 技能三选一（赏金模式）：独立会话，渲染堆叠在下方，单选确认即领取。 */
+    private static Session skillChoice;
     /** 技能卡动画队列（单卡翻转，自动结束，无领取交互）。 */
     private static final List<Session> cardQueue = new ArrayList<>();
     private static final RandomSource RNG = RandomSource.create();
@@ -135,6 +137,13 @@ public final class ClientRollManager {
             uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.35F, 0.35F);
             return;
         }
+        if (payload.rollType() == LootRollPayload.TYPE_SKILL) {
+            // 技能三选一：独立会话，不顶替资源抽奖
+            skillChoice = new Session(payload.rollType(), new ArrayList<>(payload.items()),
+                payload.accentColor(), payload.title(), mc.level.getGameTime());
+            uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 0.7F, 0.5F);
+            return;
+        }
         current = new Session(payload.rollType(), new ArrayList<>(payload.items()),
             payload.accentColor(), payload.title(), mc.level.getGameTime());
         uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.35F, 0.35F);
@@ -145,6 +154,7 @@ public final class ClientRollManager {
         Minecraft mc = Minecraft.getInstance();
         if (mc.level == null) {
             current = null;
+            skillChoice = null;
             cardQueue.clear();
             ClientSkillWheel.clear();
             return;
@@ -152,6 +162,9 @@ public final class ClientRollManager {
         long now = mc.level.getGameTime();
         if (current != null) {
             advance(now, current);
+        }
+        if (skillChoice != null) {
+            advance(now, skillChoice);
         }
         cardQueue.removeIf(card -> now - card.startTick > DURATION);
     }
@@ -201,6 +214,16 @@ public final class ClientRollManager {
             new ClaimRewardPayload(indices));
     }
 
+    /** 技能三选一：确认当前选中（只领一张，其余放弃）。 */
+    private static void confirmSkillChoice() {
+        if (skillChoice == null) {
+            return;
+        }
+        net.neoforged.neoforge.client.network.ClientPacketDistributor.sendToServer(
+            new com.example.manhunt.net.SkillPickPayload(skillChoice.selected));
+        skillChoice = null;
+    }
+
     /** 中键/回车：标记或取消标记当前选中物品。 */
     private static void toggleMark(Session roll) {
         if (roll.marked.contains(roll.selected)) {
@@ -214,10 +237,20 @@ public final class ClientRollManager {
 
     /** 滚轮选择。返回 true 表示已消费。脱离状态下滚轮为正常视角操作。 */
     public static boolean onMouseScroll(double deltaY) {
+        Minecraft mc = Minecraft.getInstance();
+        // 技能三选一（选择阶段优先）
+        if (skillChoice != null && skillChoice.claimMode) {
+            if (mc.gui.screen() != null || skillChoice.items.isEmpty()) {
+                return false;
+            }
+            int dir = deltaY < 0 ? 1 : -1;
+            skillChoice.selected = Math.floorMod(skillChoice.selected + dir, skillChoice.items.size());
+            uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.8F, 0.15F);
+            return true;
+        }
         if (!hasClaimSession() || current.detached) {
             return false;
         }
-        Minecraft mc = Minecraft.getInstance();
         if (mc.gui.screen() != null || current.items.isEmpty()) {
             return false;
         }
@@ -229,10 +262,24 @@ public final class ClientRollManager {
 
     /** 鼠标按键。返回 true 表示已消费。按键绑定见设置 → 控制 → 猎人游戏·资源抽奖。 */
     public static boolean onMouseButton(int button, int action) {
-        if (!hasClaimSession() || action != GLFW.GLFW_PRESS) {
+        if (action != GLFW.GLFW_PRESS) {
             return false;
         }
         Minecraft mc = Minecraft.getInstance();
+        // 技能三选一（选择阶段优先）：仅标记键确认领取，其余恢复正常操作
+        if (skillChoice != null && skillChoice.claimMode) {
+            if (mc.gui.screen() != null) {
+                return false;
+            }
+            if (matchesMouse(ManhuntClient.LOOT_MARK, button)) {
+                confirmSkillChoice();
+                return true;
+            }
+            return false;
+        }
+        if (!hasClaimSession()) {
+            return false;
+        }
         if (mc.gui.screen() != null) {
             return false;
         }
@@ -280,6 +327,28 @@ public final class ClientRollManager {
 
     /** 键盘按键（在原版处理后调用）。返回 true 表示已消费。标记/领取的键位可在设置中修改。脱离状态下不拦截。 */
     public static boolean onKey(int key, int action) {
+        // 技能三选一（选择阶段优先）
+        if (skillChoice != null && skillChoice.claimMode && action == GLFW.GLFW_PRESS) {
+            if (matchesKey(ManhuntClient.LOOT_MARK, key) || key == GLFW.GLFW_KEY_UP) {
+                confirmSkillChoice();
+                return true;
+            }
+            if (key == GLFW.GLFW_KEY_LEFT) {
+                skillChoice.selected = Math.floorMod(skillChoice.selected - 1, skillChoice.items.size());
+                uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.8F, 0.15F);
+                return true;
+            }
+            if (key == GLFW.GLFW_KEY_RIGHT) {
+                skillChoice.selected = Math.floorMod(skillChoice.selected + 1, skillChoice.items.size());
+                uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.8F, 0.15F);
+                return true;
+            }
+            if (key == GLFW.GLFW_KEY_DOWN) {
+                confirmSkillChoice();
+                return true;
+            }
+            return false;
+        }
         if (!hasClaimSession() || current.detached || action != GLFW.GLFW_PRESS) {
             return false;
         }
@@ -340,6 +409,12 @@ public final class ClientRollManager {
             double elapsed = nowD - current.startTick;
             if (elapsed >= 0) {
                 y = renderRoll(g, mc, current, elapsed, y);
+            }
+        }
+        if (skillChoice != null) {
+            double elapsed = nowD - skillChoice.startTick;
+            if (elapsed >= 0) {
+                renderRoll(g, mc, skillChoice, elapsed, y + 6);
             }
         }
         for (Session card : cardQueue) {
@@ -430,7 +505,12 @@ public final class ClientRollManager {
             g.text(mc.font, label, labelX, barY + icon + 4, withAlpha(0xFFFFF0C0, alpha), true);
 
             // 操作提示：仅滚轮/中键/右键，小字号；脱离状态提示中键返回（不随面板淡化，左键脱离不提示）
-            String hint = roll.detached ? "§f中键 返回资源抽奖" : "§f滚轮 选择   §f中键 标记   §f右键 领取标记";
+            String hint;
+            if (roll.type == LootRollPayload.TYPE_SKILL) {
+                hint = "§f滚轮 选择   §f中键 确认领取（其余放弃）";
+            } else {
+                hint = roll.detached ? "§f中键 返回资源抽奖" : "§f滚轮 选择   §f中键 标记   §f右键 领取标记";
+            }
             float hintAlpha = roll.detached ? 1.0F : alpha;
             float hintScale = 0.75F;
             int hintW = mc.font.width(hint);
@@ -536,6 +616,7 @@ public final class ClientRollManager {
 
     public static void clear() {
         current = null;
+        skillChoice = null;
         cardQueue.clear();
         ClientSkillWheel.clear();
     }

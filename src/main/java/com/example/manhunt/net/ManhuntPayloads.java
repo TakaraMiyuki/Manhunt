@@ -40,6 +40,22 @@ public final class ManhuntPayloads {
                     SkillSlotManager.selectSkill(player, payload.index());
                 }
             });
+        // 技能三选一确认（赏金模式）
+        registrar.playToServer(com.example.manhunt.net.SkillPickPayload.TYPE,
+            com.example.manhunt.net.SkillPickPayload.STREAM_CODEC,
+            (payload, ctx) -> {
+                if (ctx.player() instanceof net.minecraft.server.level.ServerPlayer player) {
+                    com.example.manhunt.loot.SkillDrawManager.pick(player, payload.index());
+                }
+            });
+        // 超级疾跑开关（赏金模式）
+        registrar.playToServer(com.example.manhunt.net.SprintTogglePayload.TYPE,
+            com.example.manhunt.net.SprintTogglePayload.STREAM_CODEC,
+            (payload, ctx) -> {
+                if (ctx.player() instanceof net.minecraft.server.level.ServerPlayer player) {
+                    com.example.manhunt.game.SprintManager.set(player, payload.on());
+                }
+            });
 
     }
 }

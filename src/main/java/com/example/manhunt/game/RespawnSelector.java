@@ -71,6 +71,25 @@ public final class RespawnSelector {
         return GlobalPos.of(Level.OVERWORLD, overworld.getLevelData().getRespawnData().pos());
     }
 
+    /** 赏金模式：逃生者复活点——距死亡位置 300–500 格随机方向地表。 */
+    public static GlobalPos selectRunnerRespawn(MinecraftServer server, ServerPlayer deadRunner) {
+        ServerLevel overworld = server.overworld();
+        BlockPos death = deadRunner.blockPosition();
+        for (int attempt = 0; attempt < 32; attempt++) {
+            double angle = RNG.nextDouble() * Math.PI * 2;
+            double dist = GameConfig.BOUNTY_RESPAWN_MIN
+                + RNG.nextDouble() * (GameConfig.BOUNTY_RESPAWN_MAX - GameConfig.BOUNTY_RESPAWN_MIN);
+            int x = Mth.floor(death.getX() + Math.cos(angle) * dist);
+            int z = Mth.floor(death.getZ() + Math.sin(angle) * dist);
+            int y = CheckpointManager.surfaceY(overworld, x, z);
+            if (y >= GameConfig.MIN_SURFACE_Y) {
+                return GlobalPos.of(Level.OVERWORLD, new BlockPos(x, y, z));
+            }
+        }
+        // 兜底：世界出生点
+        return GlobalPos.of(Level.OVERWORLD, overworld.getLevelData().getRespawnData().pos());
+    }
+
     private static boolean anyRunnerInEnd(List<ServerPlayer> runners) {
         for (ServerPlayer r : runners) {
             if (r.level().dimension() == Level.END) {

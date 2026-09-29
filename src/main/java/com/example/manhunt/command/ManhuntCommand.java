@@ -62,11 +62,22 @@ public final class ManhuntCommand {
             })));
 
         admin.then(Commands.literal("start")
-            .executes(ctx -> startAssigned(ctx.getSource()))
+            .executes(ctx -> startAssigned(ctx.getSource(), com.example.manhunt.game.Mode.CLASSIC))
             .then(Commands.literal("random")
                 .then(Commands.argument("hunters", IntegerArgumentType.integer(1))
-                    .executes(ctx -> startRandom(ctx.getSource(), IntegerArgumentType.getInteger(ctx, "hunters")))))
-            .then(Commands.literal("solo").executes(ctx -> startSolo(ctx.getSource()))));
+                    .executes(ctx -> startRandom(ctx.getSource(), IntegerArgumentType.getInteger(ctx, "hunters"),
+                        com.example.manhunt.game.Mode.CLASSIC))))
+            .then(Commands.literal("solo").executes(ctx -> startSolo(ctx.getSource(),
+                com.example.manhunt.game.Mode.CLASSIC)))
+            // 赏金猎人模式
+            .then(Commands.literal("bounty")
+                .executes(ctx -> startAssigned(ctx.getSource(), com.example.manhunt.game.Mode.BOUNTY))
+                .then(Commands.literal("random")
+                    .then(Commands.argument("hunters", IntegerArgumentType.integer(1))
+                        .executes(ctx -> startRandom(ctx.getSource(), IntegerArgumentType.getInteger(ctx, "hunters"),
+                            com.example.manhunt.game.Mode.BOUNTY))))
+                .then(Commands.literal("solo").executes(ctx -> startSolo(ctx.getSource(),
+                    com.example.manhunt.game.Mode.BOUNTY)))));
 
         admin.then(Commands.literal("stop").executes(ctx -> {
             ManhuntGame.stop(ctx.getSource().getServer());
@@ -92,6 +103,35 @@ public final class ManhuntCommand {
                 .then(Commands.literal("set")
                     .then(Commands.argument("amount", IntegerArgumentType.integer(0))
                         .executes(ctx -> debugMorale(ctx, IntegerArgumentType.getInteger(ctx, "amount"), false)))))
+            .then(Commands.literal("bounty")
+                .then(Commands.literal("add")
+                    .then(Commands.argument("amount", IntegerArgumentType.integer(1))
+                        .executes(ctx -> {
+                            if (requireRunning(ctx.getSource())) {
+                                com.example.manhunt.game.BountyManager.addBounty(
+                                    ctx.getSource().getServer(), IntegerArgumentType.getInteger(ctx, "amount"));
+                                return 1;
+                            }
+                            return 0;
+                        })))
+                .then(Commands.literal("set")
+                    .then(Commands.argument("amount", IntegerArgumentType.integer(0))
+                        .executes(ctx -> {
+                            if (requireRunning(ctx.getSource())) {
+                                com.example.manhunt.game.BountyManager.setBounty(
+                                    ctx.getSource().getServer(), IntegerArgumentType.getInteger(ctx, "amount"));
+                                return 1;
+                            }
+                            return 0;
+                        }))))
+            .then(Commands.literal("skilldraw").executes(ctx -> {
+                ServerPlayer p = ctx.getSource().getPlayerOrException();
+                if (requireRunning(ctx.getSource())) {
+                    com.example.manhunt.loot.SkillDrawManager.offer(p);
+                    return 1;
+                }
+                return 0;
+            }))
             .then(Commands.literal("draw").executes(ctx -> {
                 ServerPlayer p = ctx.getSource().getPlayerOrException();
                 if (requireRunning(ctx.getSource())) {
@@ -196,13 +236,15 @@ public final class ManhuntCommand {
         ManhuntGame.runners().clear();
     }
 
-    private static int startAssigned(net.minecraft.commands.CommandSourceStack source) {
+    private static int startAssigned(net.minecraft.commands.CommandSourceStack source,
+                                     com.example.manhunt.game.Mode mode) {
         String error = ManhuntGame.start(source.getServer(),
-            new HashSet<>(ManhuntGame.hunters()), new HashSet<>(ManhuntGame.runners()), false);
+            new HashSet<>(ManhuntGame.hunters()), new HashSet<>(ManhuntGame.runners()), false, mode);
         return finishStart(source, error);
     }
 
-    private static int startRandom(net.minecraft.commands.CommandSourceStack source, int hunterCount) {
+    private static int startRandom(net.minecraft.commands.CommandSourceStack source, int hunterCount,
+                                   com.example.manhunt.game.Mode mode) {
         List<ServerPlayer> online = new ArrayList<>(source.getServer().getPlayerList().getPlayers());
         if (hunterCount >= online.size()) {
             source.sendFailure(Component.literal("§c猎人数必须少于在线玩家数（至少留 1 名逃生者）。"));
@@ -218,16 +260,17 @@ public final class ManhuntCommand {
                 runners.add(online.get(i).getUUID());
             }
         }
-        String error = ManhuntGame.start(source.getServer(), hunters, runners, false);
+        String error = ManhuntGame.start(source.getServer(), hunters, runners, false, mode);
         return finishStart(source, error);
     }
 
-    private static int startSolo(net.minecraft.commands.CommandSourceStack source) {
+    private static int startSolo(net.minecraft.commands.CommandSourceStack source,
+                                 com.example.manhunt.game.Mode mode) {
         Set<UUID> runners = new HashSet<>();
         for (ServerPlayer p : source.getServer().getPlayerList().getPlayers()) {
             runners.add(p.getUUID());
         }
-        String error = ManhuntGame.start(source.getServer(), Set.of(), runners, true);
+        String error = ManhuntGame.start(source.getServer(), Set.of(), runners, true, mode);
         return finishStart(source, error);
     }
 
@@ -319,9 +362,16 @@ public final class ManhuntCommand {
         StringBuilder sb = new StringBuilder();
         sb.append("§6==== 猎人游戏状态 ====\n");
         sb.append("§7阶段: §f").append(ManhuntGame.phase())
-            .append(ManhuntGame.soloMode() ? " §b(单人调试)" : "").append('\n');
+            .append(ManhuntGame.soloMode() ? " §b(单人调试)" : "")
+            .append(ManhuntGame.isBounty() ? " §6(赏金猎人模式)" : "").append('\n');
         sb.append("§7档位: §f").append(TierSystem.displayTier())
             .append(TierSystem.forcedTier() != null ? " §c(锁定)" : " §7(自动)").append('\n');
+        if (ManhuntGame.isBounty()) {
+            sb.append("§6赏金: §f").append(com.example.manhunt.game.BountyManager.bounty())
+                .append("§7/触发 ").append(com.example.manhunt.game.BountyManager.rewards()).append(" 档\n");
+            sb.append("§6总里程池: §f").append(MileageManager.poolTotal())
+                .append("§7/要塞档 ").append(ManhuntGame.bountyStrongholdTier()).append('\n');
+        }
         sb.append("§7士气: §f").append(MoraleManager.morale())
             .append("§7/触发 ").append(MoraleManager.rewards()).append(" 档\n");
         sb.append("§7检查点: §f已激活 ").append(ManhuntGame.activatedCount())

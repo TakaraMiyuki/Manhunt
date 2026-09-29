@@ -25,6 +25,8 @@ public final class MileageManager {
     private static final Map<UUID, Double> LAST_X = new HashMap<>();
     private static final Map<UUID, Double> LAST_Z = new HashMap<>();
     private static final Map<UUID, ResourceKey<Level>> LAST_DIM = new HashMap<>();
+    /** 赏金模式总里程池：只增不减（逃生者死亡失去的里程不扣池）。 */
+    private static long POOL = 0;
 
     /** 每刻累计在线参与者的水平位移并触发抽奖（猎人效率为逃生者的 1/3）。 */
     public static void tick(MinecraftServer server) {
@@ -67,6 +69,10 @@ public final class MileageManager {
             mileage++;
         }
         ACCUM.put(id, accum);
+        long delta = mileage - MILEAGE.getOrDefault(id, 0L);
+        if (delta > 0 && ManhuntGame.isBounty()) {
+            POOL += delta; // 总里程池只增不减
+        }
         MILEAGE.put(id, mileage);
         int shouldRolls = (int) (mileage / GameConfig.MILEAGE_PER_ROLL);
         if (shouldRolls > rolls) {
@@ -93,6 +99,9 @@ public final class MileageManager {
         UUID id = p.getUUID();
         long old = MILEAGE.getOrDefault(id, 0L);
         long updated = Math.max(0, old + amount);
+        if (updated > old && ManhuntGame.isBounty()) {
+            POOL += updated - old;
+        }
         MILEAGE.put(id, updated);
         int oldRolls = ROLL_COUNT.getOrDefault(id, 0);
         int shouldRolls = (int) (updated / GameConfig.MILEAGE_PER_ROLL);
@@ -107,10 +116,26 @@ public final class MileageManager {
 
     public static void setMileage(ServerPlayer p, long value) {
         UUID id = p.getUUID();
-        MILEAGE.put(id, Math.max(0, value));
-        ROLL_COUNT.put(id, (int) (Math.max(0, value) / GameConfig.MILEAGE_PER_ROLL));
+        long old = MILEAGE.getOrDefault(id, 0L);
+        long updated = Math.max(0, value);
+        // 池只增不减：里程减少（死亡惩罚）不影响总里程池
+        if (updated > old && ManhuntGame.isBounty()) {
+            POOL += updated - old;
+        }
+        MILEAGE.put(id, updated);
+        ROLL_COUNT.put(id, (int) (updated / GameConfig.MILEAGE_PER_ROLL));
         ACCUM.put(id, 0.0);
         syncMeter(p);
+    }
+
+    // ==================== 赏金总里程池 ====================
+
+    public static long poolTotal() {
+        return POOL;
+    }
+
+    public static void restorePool(long value) {
+        POOL = Math.max(0, value);
     }
 
     // ==================== 经验条接管 ====================
@@ -122,15 +147,23 @@ public final class MileageManager {
         }
         long mileage = MILEAGE.getOrDefault(p.getUUID(), 0L);
         MinecraftServer server = p.level().getServer();
-        if (TeamUtil.isHunter(p) && server != null && MoraleManager.showingOnMeter(server)) {
-            // 士气量表临时接管经验条（无封顶，阈值超出表后按步长外推）
-            int rewards = MoraleManager.rewards();
-            int morale = MoraleManager.morale();
+        if (TeamUtil.isHunter(p) && server != null
+                && (ManhuntGame.isBounty()
+                    ? BountyManager.showingOnMeter(server)
+                    : MoraleManager.showingOnMeter(server))) {
+            // 量表临时接管经验条（士气=经典 / 赏金=赏金模式，无封顶）
+            int rewards = ManhuntGame.isBounty() ? BountyManager.rewards() : MoraleManager.rewards();
+            int value = ManhuntGame.isBounty() ? BountyManager.bounty() : MoraleManager.morale();
             p.experienceLevel = rewards;
-            p.totalExperience = 1_000_000 + morale; // 与里程域区分，保证量表切换触发同步包
-            int next = MoraleManager.threshold(rewards);
-            int prev = rewards == 0 ? 0 : MoraleManager.threshold(rewards - 1);
-            p.experienceProgress = (float) (morale - prev) / Math.max(1, next - prev);
+            p.totalExperience = (ManhuntGame.isBounty() ? 2_000_000 : 1_000_000) + value; // 与里程域区分，保证量表切换触发同步包
+            int next = ManhuntGame.isBounty()
+                ? BountyManager.threshold(rewards)
+                : MoraleManager.threshold(rewards);
+            int prev = rewards == 0 ? 0
+                : (ManhuntGame.isBounty()
+                    ? BountyManager.threshold(rewards - 1)
+                    : MoraleManager.threshold(rewards - 1));
+            p.experienceProgress = (float) (value - prev) / Math.max(1, next - prev);
             return;
         }
         p.experienceLevel = ROLL_COUNT.getOrDefault(p.getUUID(), 0);
@@ -148,6 +181,7 @@ public final class MileageManager {
         LAST_X.clear();
         LAST_Z.clear();
         LAST_DIM.clear();
+        POOL = 0;
     }
 
     public static void onLoggedOut(UUID id) {

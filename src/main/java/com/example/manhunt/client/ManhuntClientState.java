@@ -24,10 +24,15 @@ public final class ManhuntClientState {
     private static volatile int skillActive;
     /** 逃跑倒计时期间（士气条让位倒计时 bossbar）。 */
     private static volatile boolean escapePhase;
+    /** 赏金猎人模式（量表显示为赏金、金色）。 */
+    private static volatile boolean bountyMode;
+    /** 超级疾跑开启中。 */
+    private static volatile boolean sprinting;
 
     public static void update(boolean isParticipant, boolean isRunner, boolean hasReadySkill,
                               int moraleValue, int moraleRewardCount,
-                              List<String> skillIdList, int activeIndex, boolean escape) {
+                              List<String> skillIdList, int activeIndex, boolean escape,
+                              boolean bounty, boolean sprint) {
         participant = isParticipant;
         runner = isRunner;
         skillReady = hasReadySkill;
@@ -36,6 +41,8 @@ public final class ManhuntClientState {
         skillIds = List.copyOf(skillIdList);
         skillActive = activeIndex;
         escapePhase = escape;
+        bountyMode = bounty;
+        sprinting = sprint;
     }
 
     public static boolean isParticipant() {
@@ -92,6 +99,16 @@ public final class ManhuntClientState {
         return escapePhase;
     }
 
+    /** 是否为赏金猎人模式。 */
+    public static boolean isBountyMode() {
+        return bountyMode;
+    }
+
+    /** 超级疾跑是否开启。 */
+    public static boolean isSprinting() {
+        return sprinting;
+    }
+
     public static void clear() {
         participant = false;
         runner = false;
@@ -101,5 +118,7 @@ public final class ManhuntClientState {
         skillIds = List.of();
         skillActive = -1;
         escapePhase = false;
+        bountyMode = false;
+        sprinting = false;
     }
 }

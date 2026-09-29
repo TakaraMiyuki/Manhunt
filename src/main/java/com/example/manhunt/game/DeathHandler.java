@@ -71,7 +71,7 @@ public final class DeathHandler {
                     + " §c死亡，" + com.example.manhunt.GameConfig.HUNTER_SPECTATE_TICKS / 20 + " 秒后于复活点复活。");
             }
         } else if (TeamUtil.isRunner(dead)) {
-            ManhuntGame.onRunnerDeath(server, dead);
+            ManhuntGame.onRunnerDeath(server, dead, killer(event));
         }
     }
 
@@ -207,7 +207,7 @@ public final class DeathHandler {
         return source.getDirectEntity() instanceof net.minecraft.world.entity.projectile.hurtingprojectile.DragonFireball;
     }
 
-    /** 猎人对逃生者造成的实际伤害转化为全队士气。 */
+    /** 猎人对逃生者造成的实际伤害转化为全队士气（经典）或赏金（赏金模式：1 伤 = 3 赏金）。 */
     public static void onDamagePost(LivingDamageEvent.Post event) {
         if (!ManhuntGame.isRunning()
                 || !(event.getEntity() instanceof ServerPlayer victim)
@@ -217,7 +217,12 @@ public final class DeathHandler {
         if (event.getSource().getEntity() instanceof ServerPlayer attacker && TeamUtil.isHunter(attacker)) {
             int amount = Math.round(event.getInflictedDamage());
             if (amount > 0) {
-                MoraleManager.addMorale(victim.level().getServer(), amount);
+                if (ManhuntGame.isBounty()) {
+                    BountyManager.addBounty(victim.level().getServer(),
+                        amount * com.example.manhunt.GameConfig.BOUNTY_DAMAGE_FACTOR);
+                } else {
+                    MoraleManager.addMorale(victim.level().getServer(), amount);
+                }
             }
         }
     }

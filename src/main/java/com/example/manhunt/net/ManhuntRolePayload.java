@@ -12,15 +12,18 @@ import net.minecraft.resources.Identifier;
 /**
  * S2C：玩家在当前对局中的角色标记（每秒随量表同步下发）。
  * skillReady = 技能库中存在任一冷却完毕的卡（驱动技能槽脉冲边框）。
- * morale/moraleRewards = 猎人全队士气与已达成档数（驱动屏幕上方的士气条 UI）。
+ * morale/moraleRewards = 经典：士气值与档数；赏金模式：赏金值与档数（驱动屏幕上方的量表 UI）。
  * skillIds/skillActive = 技能库全部卡牌物品 id 与激活下标（驱动技能轮盘）。
- * escapePhase = 逃跑倒计时期间（士气条让位倒计时 bossbar，不渲染）。
- * 客户端据此决定是否显示技能槽边框、技能轮盘、士气条等本地 UI。
+ * escapePhase = 逃跑倒计时期间（量表让位倒计时 bossbar，不渲染）。
+ * bountyMode = 赏金猎人模式（量表显示为赏金、金色）。
+ * sprinting = 超级疾跑开启中（HUD 状态提示）。
+ * 客户端据此决定是否显示技能槽边框、技能轮盘、量表等本地 UI。
  */
 public record ManhuntRolePayload(boolean participant, boolean runner, boolean skillReady,
                                  int morale, int moraleRewards,
                                  List<String> skillIds, int skillActive,
-                                 boolean escapePhase) implements CustomPacketPayload {
+                                 boolean escapePhase, boolean bountyMode, boolean sprinting
+                                 ) implements CustomPacketPayload {
     public static final CustomPacketPayload.Type<ManhuntRolePayload> TYPE =
         new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath("manhunt", "role"));
 
@@ -38,6 +41,8 @@ public record ManhuntRolePayload(boolean participant, boolean runner, boolean sk
             }
             ByteBufCodecs.VAR_INT.encode(buf, payload.skillActive());
             ByteBufCodecs.BOOL.encode(buf, payload.escapePhase());
+            ByteBufCodecs.BOOL.encode(buf, payload.bountyMode());
+            ByteBufCodecs.BOOL.encode(buf, payload.sprinting());
         },
         buf -> {
             boolean participant = ByteBufCodecs.BOOL.decode(buf);
@@ -52,8 +57,10 @@ public record ManhuntRolePayload(boolean participant, boolean runner, boolean sk
             }
             int skillActive = ByteBufCodecs.VAR_INT.decode(buf);
             boolean escapePhase = ByteBufCodecs.BOOL.decode(buf);
+            boolean bountyMode = ByteBufCodecs.BOOL.decode(buf);
+            boolean sprinting = ByteBufCodecs.BOOL.decode(buf);
             return new ManhuntRolePayload(participant, runner, skillReady,
-                morale, moraleRewards, skillIds, skillActive, escapePhase);
+                morale, moraleRewards, skillIds, skillActive, escapePhase, bountyMode, sprinting);
         });
 
     @Override

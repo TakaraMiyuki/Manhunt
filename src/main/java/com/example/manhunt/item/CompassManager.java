@@ -120,6 +120,10 @@ public final class CompassManager {
 
     public static void updateAll(MinecraftServer server) {
         List<ServerPlayer> runners = ManhuntGame.onlineAliveRunners(server);
+        // 赏金模式：赦免中的逃生者不可被罗盘追踪
+        if (ManhuntGame.isBounty()) {
+            runners.removeIf(r -> ManhuntGame.isCompassImmune(r.getUUID(), server));
+        }
 
         // 猎人罗盘 → 所选逃生者
         for (ServerPlayer hunter : server.getPlayerList().getPlayers()) {
@@ -151,7 +155,21 @@ public final class CompassManager {
             });
         }
 
-        // 逃生者罗盘 → 当前目标检查点（主世界）；进入末地阶段则指向最近激活检查点
+        // 逃生者罗盘：经典 → 当前目标检查点；赏金 → 距自己最近的活动检查点
+        if (ManhuntGame.isBounty()) {
+            for (ServerPlayer runner : runners) {
+                BlockPos nearest = ManhuntGame.currentCheckpoint() != null
+                    ? ManhuntGame.currentCheckpoint()
+                    : com.example.manhunt.game.CheckpointManager.nearestBountyCheckpoint(
+                        server.overworld(), runner);
+                if (nearest == null) {
+                    continue;
+                }
+                GlobalPos target = GlobalPos.of(Level.OVERWORLD, nearest);
+                forEachStack(runner, ManhuntItems.CHECKPOINT_COMPASS.get(), stack -> setTracker(stack, target));
+            }
+            return;
+        }
         BlockPos objective = ManhuntGame.currentCheckpoint();
         if (objective == null) {
             objective = ManhuntGame.lastCheckpoint();
@@ -251,8 +269,12 @@ public final class CompassManager {
             return;
         }
         List<ServerPlayer> runners = ManhuntGame.onlineAliveRunners(hunter.level().getServer());
+        if (ManhuntGame.isBounty()) {
+            runners.removeIf(r -> ManhuntGame.isCompassImmune(r.getUUID(), hunter.level().getServer()));
+        }
         if (runners.isEmpty()) {
-            hunter.sendSystemMessage(Component.literal("§7当前没有可追踪的逃生者。"), true);
+            hunter.sendSystemMessage(Component.literal(ManhuntGame.isBounty()
+                ? "§7当前没有可追踪的逃生者（可能处于赦免期）。" : "§7当前没有可追踪的逃生者。"), true);
             event.setCanceled(true);
             return;
         }
@@ -267,8 +289,23 @@ public final class CompassManager {
         ServerPlayer target = runners.get(next);
         writeTarget(stack, target.getUUID());
         setTracker(stack, GlobalPos.of(target.level().dimension(), target.blockPosition()));
-        hunter.sendSystemMessage(Component.literal(
-            "§c追踪目标 → §f" + target.getName().getString()), true);
+        if (ManhuntGame.isBounty()) {
+            long base = com.example.manhunt.game.MileageManager.mileage(target.getUUID())
+                / GameConfig.BOUNTY_KILL_DIVISOR;
+            int rank = com.example.manhunt.game.BountyManager.markRank(target.getUUID());
+            boolean marked = com.example.manhunt.game.BountyManager.isMarked(target.getUUID());
+            double mult = com.example.manhunt.game.BountyManager.killMultiplier(
+                hunter.level().getServer(), target.getUUID());
+            String info = marked
+                ? "§6第 " + rank + " 名 §7| §6赏金 §f" + base + " §7(×" + (mult == Math.floor(mult)
+                    ? String.valueOf((long) mult) : String.valueOf(mult)) + ")"
+                : "§7赏金 §f" + base;
+            hunter.sendSystemMessage(Component.literal(
+                "§c追踪目标 → " + (marked ? "§6" : "§f") + target.getName().getString() + " §7· " + info), true);
+        } else {
+            hunter.sendSystemMessage(Component.literal(
+                "§c追踪目标 → §f" + target.getName().getString()), true);
+        }
         event.setCanceled(true);
     }
 }
