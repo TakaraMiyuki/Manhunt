@@ -170,9 +170,9 @@ public final class ClientRollManager {
     }
 
     private static void advance(long now, Session roll) {
-        // 滚动 tick 音
+        // 滚动 tick 音（技能三选一没有老虎机滚动，跳过）
         long firstLock = roll.slotCount() > 0 ? roll.lockTime(0) : Long.MAX_VALUE;
-        while (roll.nextScrollSound <= now && roll.nextScrollSound < firstLock) {
+        while (roll.type != LootRollPayload.TYPE_SKILL && roll.nextScrollSound <= now && roll.nextScrollSound < firstLock) {
             uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.5F + RNG.nextFloat() * 0.6F, 0.18F);
             roll.nextScrollSound = Math.max(now, roll.nextScrollSound) + 3 + RNG.nextInt(2);
         }
@@ -414,7 +414,7 @@ public final class ClientRollManager {
         if (skillChoice != null) {
             double elapsed = nowD - skillChoice.startTick;
             if (elapsed >= 0) {
-                renderRoll(g, mc, skillChoice, elapsed, y + 6);
+                renderSkillChoice(g, mc, skillChoice, elapsed, y + 6);
             }
         }
         for (Session card : cardQueue) {
@@ -423,6 +423,96 @@ public final class ClientRollManager {
                 renderCard(g, mc, card, elapsed, y);
             }
         }
+    }
+
+    /**
+     * 技能三选一专属渲染：三张卡牌原地翻转入位（无随机物品滚动），紫色流光底；
+     * 选择阶段选中的卡上浮 + 品级色脉冲框，下方显示卡名与效果概述。
+     */
+    private static void renderSkillChoice(GuiGraphicsExtractor g, Minecraft mc, Session roll, double elapsed, int y) {
+        int slots = roll.slotCount();
+        if (slots == 0) {
+            return;
+        }
+        int icon = 24;
+        int gap = 12;
+        int width = slots * icon + (slots - 1) * gap;
+        int x0 = (g.guiWidth() - width) / 2;
+        int rowY = y + 12;
+        long now = mc.level.getGameTime();
+        float t = now;
+
+        // 标题
+        String title = roll.title != null ? roll.title : "§d技能抽奖";
+        g.text(mc.font, title, (g.guiWidth() - mc.font.width(title)) / 2, rowY - 12, 0xFFFFFFFF, true);
+
+        // 紫色流光底板
+        float shimmer = 0.10F + 0.06F * (float) Math.sin(t * 0.15);
+        int glow = withAlpha(mixAlpha(roll.accentColor != 0 ? roll.accentColor : 0xFFB266FF, shimmer), 1.0F);
+        g.fillGradient(x0 - 12, rowY - 8, x0 + width + 12, rowY + icon + 8,
+            glow, withAlpha(0x00000000, 1.0F));
+
+        // 卡牌：逐张翻转入位（每张间隔 8 刻，翻滚 14 刻）
+        for (int i = 0; i < slots; i++) {
+            int cx = x0 + i * (icon + gap) + icon / 2;
+            double since = elapsed - i * 8;
+            boolean locked = since >= 0;
+            int cy = rowY + icon / 2;
+            if (!locked) {
+                // 未翻出：暗色卡背
+                g.fill(cx - icon / 2, rowY, cx + icon / 2, rowY + icon, 0xFF181020);
+                continue;
+            }
+            float flipT = (float) Math.min(1.0, since / 14.0);
+            float scaleX = (float) Math.max(0.08, Math.abs(Math.cos(flipT * Math.PI)));
+            boolean isSelected = roll.claimMode && i == roll.selected;
+            float pop = isSelected ? 1.12F : 1.0F;
+            int lift = isSelected ? -3 : 0;
+
+            // 品级光晕（翻转完成后）
+            if (flipT >= 1.0) {
+                float glowPulse = 0.35F + 0.3F * (float) Math.abs(Math.sin(t * 0.2 + i));
+                int glowCol = withAlpha(mixAlpha(roll.accentColor != 0 ? roll.accentColor : 0xFFFF55FF, glowPulse), 1.0F);
+                g.fillGradient(cx - icon / 2 - 3, rowY + lift - 3, cx + icon / 2 + 3, rowY + icon + 3 + lift,
+                    glowCol, withAlpha(0x00000000, 1.0F));
+            }
+            g.pose().pushMatrix();
+            g.pose().translate(cx, cy + lift);
+            g.pose().scale(scaleX * pop, pop);
+            g.item(roll.items.get(i), -8, -8);
+            g.pose().popMatrix();
+
+            // 选择阶段：选中框
+            if (roll.claimMode && isSelected) {
+                float pulse = 0.6F + 0.4F * (float) Math.abs(Math.sin(t * 0.3));
+                int frame = withAlpha(mixAlpha(roll.accentColor != 0 ? roll.accentColor : 0xFFFFC844, pulse), 1.0F);
+                int half = icon / 2;
+                g.fill(cx - half - 2, cy + lift - half - 2, cx + half + 2, cy + lift - half, frame);
+                g.fill(cx - half - 2, cy + lift + half, cx + half + 2, cy + lift + half + 2, frame);
+                g.fill(cx - half - 2, cy + lift - half, cx - half, cy + lift + half, frame);
+                g.fill(cx + half, cy + lift - half, cx + half + 2, cy + lift + half, frame);
+            }
+        }
+
+        // 选择阶段：卡名 + 概述 + 提示
+        if (roll.claimMode) {
+            ItemStack sel = roll.items.get(roll.selected);
+            Component label = selectionLabel(sel);
+            g.text(mc.font, label, (g.guiWidth() - mc.font.width(label)) / 2, rowY + icon + 6, 0xFFFFFFFF, true);
+            String brief = net.minecraft.network.chat.Component.translatable(
+                sel.getItem().getDescriptionId() + ".brief").getString();
+            String briefLine = "§b" + brief;
+            g.text(mc.font, briefLine, (g.guiWidth() - mc.font.width(briefLine)) / 2, rowY + icon + 16, 0xFFFFFFFF, true);
+            String hint = "§f滚轮 选择   §f中键 确认领取（其余放弃）";
+            float hintScale = 0.75F;
+            int hintW = mc.font.width(hint);
+            g.pose().pushMatrix();
+            g.pose().translate((g.guiWidth() - hintW * hintScale) / 2, rowY + icon + 27);
+            g.pose().scale(hintScale, hintScale);
+            g.text(mc.font, hint, 0, 0, 0xFFB8B8B8, true);
+            g.pose().popMatrix();
+        }
+        // 占位返回值保持调用兼容
     }
 
     private static int renderRoll(GuiGraphicsExtractor g, Minecraft mc, Session roll, double elapsed, int y) {

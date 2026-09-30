@@ -71,6 +71,9 @@ public final class DeathHandler {
                     + " §c死亡，" + com.example.manhunt.GameConfig.HUNTER_SPECTATE_TICKS / 20 + " 秒后于复活点复活。");
             }
         } else if (TeamUtil.isRunner(dead)) {
+            if (ManhuntGame.isBounty()) {
+                snapshotHunterGear(dead); // 赏金模式：装备保留（随复活/旁观归还）
+            }
             ManhuntGame.onRunnerDeath(server, dead, killer(event));
         }
     }

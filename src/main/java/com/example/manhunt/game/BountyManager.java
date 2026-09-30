@@ -201,14 +201,19 @@ public final class BountyManager {
 
     private static long lastSkillTier = 0;
 
-    /** 池每跨一个技能档 → 全体在线存活逃生者各一次三选一技能抽奖。 */
+    /** 池每跨一个技能档 → 全体在线存活逃生者各一次三选一技能抽奖（封顶 BOUNTY_SKILL_DIVISOR=6 次）。 */
     private static void checkPoolTiers(MinecraftServer server) {
+        // 池达到要塞档：立即切换为仅剩要塞（此后不再触发技能抽奖）
+        if (ManhuntGame.currentCheckpoint() == null && !ManhuntGame.bountyCheckpoints().isEmpty()
+                && MileageManager.poolTotal() >= ManhuntGame.bountyStrongholdTier()) {
+            CheckpointManager.switchToStronghold(server);
+        }
         int tier = ManhuntGame.bountySkillTier();
         if (tier <= 0) {
             return;
         }
         long pool = MileageManager.poolTotal();
-        int crossed = (int) (pool / tier);
+        int crossed = (int) Math.min(GameConfig.BOUNTY_SKILL_DIVISOR, pool / tier); // 进末地前最多 6 张
         if (crossed <= lastSkillTier) {
             return;
         }

@@ -98,7 +98,12 @@ public final class TeamUtil {
                 SprintManager.applySpeed(p); // 超级疾跑：速度 II（覆盖档位速度）
             }
         } else {
-            if (ManhuntGame.isBounty()) {
+            if (ManhuntGame.phase() == ManhuntGame.Phase.ESCAPE) {
+                // 逃跑时间：猎人被定身（两种模式一致，必须先于赏金/经典增益分支）
+                add(p, MobEffects.BLINDNESS, dur, 0);
+                add(p, MobEffects.SLOWNESS, dur, 5);
+                add(p, MobEffects.WEAKNESS, dur, 1);
+            } else if (ManhuntGame.isBounty()) {
                 // 赏金模式专属增益：抗性1/速度2/急迫2（末地追加饱和+跳跃提升1；比值≥1:4 时末地速度3）
                 boolean end = p.level().dimension() == Level.END;
                 boolean large = ManhuntGame.bountyHunterLarge();
@@ -111,11 +116,6 @@ public final class TeamUtil {
                     add(p, MobEffects.SATURATION, dur, GameConfig.BOUNTY_HUNTER_END_SATURATION);
                     add(p, MobEffects.JUMP_BOOST, dur, GameConfig.BOUNTY_HUNTER_END_JUMP - 1);
                 }
-            } else if (ManhuntGame.phase() == ManhuntGame.Phase.ESCAPE) {
-                // 逃跑时间：猎人被定身
-                add(p, MobEffects.BLINDNESS, dur, 0);
-                add(p, MobEffects.SLOWNESS, dur, 5);
-                add(p, MobEffects.WEAKNESS, dur, 1);
             } else {
                 TierSystem.HunterStats s = TierSystem.hunter();
                 add(p, MobEffects.SPEED, dur, s.speedLevel() - 1);
@@ -157,8 +157,24 @@ public final class TeamUtil {
         p.getFoodData().setSaturation(5.0F);
     }
 
-    /** 逃生者初始装备：石剑、石镐、石斧、泥土 x64。 */
+    /** 逃生者初始装备（经典）：石剑、石镐、石斧、泥土 x64。 */
     public static void giveInitialKit(ServerPlayer p) {
+        give(p, new ItemStack(Items.STONE_SWORD));
+        give(p, new ItemStack(Items.STONE_PICKAXE));
+        give(p, new ItemStack(Items.STONE_AXE));
+        give(p, new ItemStack(Items.DIRT, 64));
+    }
+
+    /** 赏金模式逃生者初始装备：木剑、木镐、木斧、泥土 x64。 */
+    public static void giveBountyRunnerKit(ServerPlayer p) {
+        give(p, new ItemStack(Items.WOODEN_SWORD));
+        give(p, new ItemStack(Items.WOODEN_PICKAXE));
+        give(p, new ItemStack(Items.WOODEN_AXE));
+        give(p, new ItemStack(Items.DIRT, 64));
+    }
+
+    /** 赏金模式猎人初始装备：石剑、石镐、石斧、泥土 x64。 */
+    public static void giveBountyHunterKit(ServerPlayer p) {
         give(p, new ItemStack(Items.STONE_SWORD));
         give(p, new ItemStack(Items.STONE_PICKAXE));
         give(p, new ItemStack(Items.STONE_AXE));

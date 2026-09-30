@@ -63,7 +63,7 @@ public final class GameConfig {
     /** 检查点环带：距出生点 400–600 格，互相间隔至少该值。 */
     public static final int BOUNTY_CP_SPACING = 400;
     /** 激活末地要塞检查点所需总里程档 = 逃生者数 × 该值。 */
-    public static final int BOUNTY_STRONGHOLD_PER_RUNNER = 3000;
+    public static final int BOUNTY_STRONGHOLD_PER_RUNNER = 4000;
     /** 全体技能抽奖档位 = 要塞档 ÷ 该值（进末地前最多 6 次）。 */
     public static final int BOUNTY_SKILL_DIVISOR = 6;
     /** 逃生者初始命数。 */
@@ -81,9 +81,9 @@ public final class GameConfig {
     public static final int BOUNTY_KILL_DIVISOR = 3;
     /** 赏金量表档位（按赏金猎人数分三套，末档后每档 +BOUNTY_TIER_STEP_AFTER）：
      *  前期靠伤害积攒档位小、后期击杀赏金大档距放宽，猎人越多单档越大。 */
-    public static final int[] BOUNTY_TIERS_1H = {100, 200, 300, 500, 700, 1100, 1600, 2200, 2800, 3400, 4400};
-    public static final int[] BOUNTY_TIERS_2H = {150, 300, 450, 700, 1000, 1300, 1800, 2400, 3100, 3800, 4800};
-    public static final int[] BOUNTY_TIERS_3P = {200, 400, 600, 1000, 1400, 1900, 2500, 3100, 3800, 4400, 5400};
+    public static final int[] BOUNTY_TIERS_1H = {100, 200, 400, 900, 1400, 2000, 2700, 3600, 4600};
+    public static final int[] BOUNTY_TIERS_2H = {150, 300, 600, 1100, 1600, 2300, 3100, 4000, 5000};
+    public static final int[] BOUNTY_TIERS_3P = {200, 400, 800, 1300, 1900, 2700, 3600, 4600};
     /** 赏金量表末档之后每档固定增加。 */
     public static final int BOUNTY_TIER_STEP_AFTER = 1000;
     /** 赏金模式猎人里程积攒效率（相对逃生者）。 */

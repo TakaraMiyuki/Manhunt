@@ -101,8 +101,8 @@ public final class ManhuntClient {
         if (!ManhuntClientState.isParticipant() || ManhuntClientState.isRunner()) {
             return; // 仅猎人显示
         }
-        if (ManhuntClientState.isEscapePhase()) {
-            return; // 逃跑倒计时：位置让给倒计时 bossbar
+        if (mc.player.level().dimension() == net.minecraft.world.level.Level.END) {
+            return; // 末地阶段：隐藏士气/赏金量表
         }
         boolean bounty = ManhuntClientState.isBountyMode();
         int value = ManhuntClientState.morale();
@@ -111,7 +111,8 @@ public final class ManhuntClient {
         int prev = rewards == 0 ? 0 : threshold(rewards - 1, ManhuntClientState.hunters());
         float progress = net.minecraft.util.Mth.clamp((value - prev) / (float) Math.max(1, next - prev), 0.0F, 1.0F);
         int x = g.guiWidth() / 2 - 91;
-        int y = 12; // 与原版 bossbar 同位对齐
+        // 与原版 bossbar 同位对齐：存在原版 bossbar（逃跑倒计时等）时像原版一样顺位下移一行
+        int y = ManhuntClientState.isEscapePhase() ? 12 + 19 : 12;
         String label = (bounty ? "§6赏金 " : "§b士气 ") + value + " §7· 档 " + (rewards + 1);
         g.text(mc.font, label, (g.guiWidth() - mc.font.width(label)) / 2, y - 10, 0xFFFFFFFF, true);
         // 原版 bossbar 雪碧图（赏金=黄 / 士气=蓝）

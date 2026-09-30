@@ -141,8 +141,11 @@ public final class CheckpointManager {
 
     /** 赏金模式激活入口（调试指令也走这里）。 */
     public static void activateBounty(MinecraftServer server, ServerPlayer activator, BlockPos cp, boolean isStronghold) {
-        ManhuntGame.setCurrentCheckpoint(isStronghold ? cp : null, isStronghold);
+        // 供奖励结算读取（lastCheckpoint / 绿色粒子圈）
+        ManhuntGame.setCurrentCheckpoint(cp, isStronghold);
         ManhuntGame.onCheckpointActivated(server, activator, isStronghold);
+        // 结算完毕清除"当前"标记：要塞必须清空，否则玩家留在半径内会每秒重复激活（无限末影之眼）
+        ManhuntGame.setCurrentCheckpoint(null, false);
         if (isStronghold) {
             ManhuntGame.bountyCheckpoints().clear(); // 进入末地阶段
             ManhuntGame.sendToRunners(server, "§6[赏金猎人] §d目标转为击杀末影龙！");
@@ -166,7 +169,7 @@ public final class CheckpointManager {
     }
 
     /** 池达标：清空普通检查点，定位要塞（传送门房间上方）作为唯一检查点。 */
-    private static void switchToStronghold(MinecraftServer server) {
+    public static void switchToStronghold(MinecraftServer server) {
         ServerLevel overworld = server.overworld();
         var checkpoints = ManhuntGame.bountyCheckpoints();
         checkpoints.clear();

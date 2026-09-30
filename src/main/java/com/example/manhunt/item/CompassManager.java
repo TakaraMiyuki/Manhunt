@@ -31,6 +31,8 @@ public final class CompassManager {
     private CompassManager() {}
 
     private static final String TARGET_TAG = "manhunt_target";
+    /** 赏金模式：检查点罗盘手动选择的检查点（"x,y,z"）。 */
+    private static final String CP_CHOICE_TAG = "manhunt_cp_choice";
 
     /**
      * 罗盘指向装饰器（供其他模组扩展，如技能卡"盲点"的干扰效果）：
@@ -155,18 +157,24 @@ public final class CompassManager {
             });
         }
 
-        // 逃生者罗盘：经典 → 当前目标检查点；赏金 → 距自己最近的活动检查点
+        // 逃生者罗盘：经典 → 当前目标检查点；赏金 → 手动选择的检查点（默认最近）
         if (ManhuntGame.isBounty()) {
             for (ServerPlayer runner : runners) {
+                BlockPos manual = readCpChoice(runner, ManhuntItems.CHECKPOINT_COMPASS.get());
+                if (manual != null && !ManhuntGame.bountyCheckpoints().contains(manual)) {
+                    clearCpChoice(runner, ManhuntItems.CHECKPOINT_COMPASS.get());
+                    manual = null;
+                }
                 BlockPos nearest = ManhuntGame.currentCheckpoint() != null
                     ? ManhuntGame.currentCheckpoint()
                     : com.example.manhunt.game.CheckpointManager.nearestBountyCheckpoint(
                         server.overworld(), runner);
-                if (nearest == null) {
+                BlockPos target = manual != null ? manual : nearest;
+                if (target == null) {
                     continue;
                 }
-                GlobalPos target = GlobalPos.of(Level.OVERWORLD, nearest);
-                forEachStack(runner, ManhuntItems.CHECKPOINT_COMPASS.get(), stack -> setTracker(stack, target));
+                GlobalPos pos = GlobalPos.of(Level.OVERWORLD, target);
+                forEachStack(runner, ManhuntItems.CHECKPOINT_COMPASS.get(), stack -> setTracker(stack, pos));
             }
             return;
         }
@@ -254,6 +262,103 @@ public final class CompassManager {
 
     // ==================== 右键切换追踪目标 ====================
 
+    /** 赏金模式：逃生者右键检查点罗盘 → 循环切换追踪的检查点，并显示实际距离。 */
+    private static void onCheckpointCompassRightClick(PlayerInteractEvent.RightClickItem event, ItemStack stack) {
+        if (!(event.getEntity() instanceof ServerPlayer runner)) {
+            return;
+        }
+        if (!ManhuntGame.isBounty() || !ManhuntGame.isRunning()) {
+            return;
+        }
+        java.util.List<BlockPos> cps = ManhuntGame.bountyCheckpoints();
+        if (ManhuntGame.currentCheckpoint() != null) {
+            // 要塞阶段：只有一个目标，刷新指向并显示距离
+            BlockPos stronghold = ManhuntGame.currentCheckpoint();
+            setTracker(stack, GlobalPos.of(Level.OVERWORLD, stronghold));
+            runner.sendSystemMessage(Component.literal("§d检查点 → 末地要塞 §7(距离 §f"
+                + horizDist(runner, stronghold) + "m§7)"), true);
+            event.setCanceled(true);
+            return;
+        }
+        if (cps.isEmpty()) {
+            runner.sendSystemMessage(Component.literal("§7当前没有可追踪的检查点。"), true);
+            event.setCanceled(true);
+            return;
+        }
+        BlockPos manual = readCpChoice(runner, ManhuntItems.CHECKPOINT_COMPASS.get());
+        int idx = 0;
+        double bestSq = Double.MAX_VALUE;
+        for (int i = 0; i < cps.size(); i++) {
+            BlockPos cp = cps.get(i);
+            if (cp.equals(manual)) {
+                idx = i;
+                break;
+            }
+            double dx = runner.getX() - (cp.getX() + 0.5);
+            double dz = runner.getZ() - (cp.getZ() + 0.5);
+            double d2 = dx * dx + dz * dz;
+            if (d2 < bestSq) {
+                bestSq = d2;
+                idx = i; // 无手动选择时从最近的下一个开始
+            }
+        }
+        int next = (idx + 1) % cps.size();
+        BlockPos target = cps.get(next);
+        writeCpChoice(stack, target);
+        setTracker(stack, GlobalPos.of(Level.OVERWORLD, target));
+        runner.sendSystemMessage(Component.literal(
+            "§e检查点 → §f" + target.getX() + ", " + target.getY() + ", " + target.getZ()
+                + " §7(距离 §f" + horizDist(runner, target) + "m§7"
+                + " §7| 第 " + (next + 1) + "/" + cps.size() + " 个)"), true);
+        event.setCanceled(true);
+    }
+
+    private static int horizDist(ServerPlayer p, BlockPos pos) {
+        double dx = p.getX() - (pos.getX() + 0.5);
+        double dz = p.getZ() - (pos.getZ() + 0.5);
+        return (int) Math.sqrt(dx * dx + dz * dz);
+    }
+
+    private static BlockPos readCpChoice(ServerPlayer p, net.minecraft.world.item.Item item) {
+        BlockPos[] out = {null};
+        forEachStack(p, item, stack -> {
+            CustomData data = stack.get(DataComponents.CUSTOM_DATA);
+            if (data == null) {
+                return;
+            }
+            String value = data.copyTag().getStringOr(CP_CHOICE_TAG, "");
+            if (value.isEmpty()) {
+                return;
+            }
+            String[] parts = value.split(",");
+            if (parts.length == 3) {
+                try {
+                    out[0] = new BlockPos(Integer.parseInt(parts[0]),
+                        Integer.parseInt(parts[1]), Integer.parseInt(parts[2]));
+                } catch (NumberFormatException ignored) {
+                }
+            }
+        });
+        return out[0];
+    }
+
+    private static void writeCpChoice(ItemStack stack, BlockPos pos) {
+        CompoundTag tag = new CompoundTag();
+        tag.putString(CP_CHOICE_TAG, pos.getX() + "," + pos.getY() + "," + pos.getZ());
+        stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+    }
+
+    private static void clearCpChoice(ServerPlayer p, net.minecraft.world.item.Item item) {
+        forEachStack(p, item, stack -> {
+            CustomData data = stack.get(DataComponents.CUSTOM_DATA);
+            CompoundTag tag = data != null ? data.copyTag() : new CompoundTag();
+            if (tag.contains(CP_CHOICE_TAG)) {
+                tag.remove(CP_CHOICE_TAG);
+                stack.set(DataComponents.CUSTOM_DATA, CustomData.of(tag));
+            }
+        });
+    }
+
     public static void onRightClick(PlayerInteractEvent.RightClickItem event) {
         if (event.getLevel().isClientSide()) {
             return;
@@ -262,6 +367,10 @@ public final class CompassManager {
             return;
         }
         ItemStack stack = event.getItemStack();
+        if (stack.is(ManhuntItems.CHECKPOINT_COMPASS.get())) {
+            onCheckpointCompassRightClick(event, stack);
+            return;
+        }
         if (!stack.is(ManhuntItems.TRACKING_COMPASS.get())) {
             return;
         }
