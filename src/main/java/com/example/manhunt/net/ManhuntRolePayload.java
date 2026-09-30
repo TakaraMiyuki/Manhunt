@@ -17,13 +17,15 @@ import net.minecraft.resources.Identifier;
  * escapePhase = 逃跑倒计时期间（量表让位倒计时 bossbar，不渲染）。
  * bountyMode = 赏金猎人模式（量表显示为赏金、金色）。
  * sprinting = 超级疾跑开启中（HUD 状态提示）。
+ * hunters = 赏金猎人数（赏金量表阈值表选择）。
+ * respawnSeconds = 复活倒计时秒数（-1 = 无）。
  * 客户端据此决定是否显示技能槽边框、技能轮盘、量表等本地 UI。
  */
 public record ManhuntRolePayload(boolean participant, boolean runner, boolean skillReady,
                                  int morale, int moraleRewards,
                                  List<String> skillIds, int skillActive,
-                                 boolean escapePhase, boolean bountyMode, boolean sprinting
-                                 ) implements CustomPacketPayload {
+                                 boolean escapePhase, boolean bountyMode, boolean sprinting,
+                                 int hunters, int respawnSeconds) implements CustomPacketPayload {
     public static final CustomPacketPayload.Type<ManhuntRolePayload> TYPE =
         new CustomPacketPayload.Type<>(Identifier.fromNamespaceAndPath("manhunt", "role"));
 
@@ -43,6 +45,8 @@ public record ManhuntRolePayload(boolean participant, boolean runner, boolean sk
             ByteBufCodecs.BOOL.encode(buf, payload.escapePhase());
             ByteBufCodecs.BOOL.encode(buf, payload.bountyMode());
             ByteBufCodecs.BOOL.encode(buf, payload.sprinting());
+            ByteBufCodecs.VAR_INT.encode(buf, payload.hunters());
+            ByteBufCodecs.VAR_INT.encode(buf, payload.respawnSeconds());
         },
         buf -> {
             boolean participant = ByteBufCodecs.BOOL.decode(buf);
@@ -59,8 +63,11 @@ public record ManhuntRolePayload(boolean participant, boolean runner, boolean sk
             boolean escapePhase = ByteBufCodecs.BOOL.decode(buf);
             boolean bountyMode = ByteBufCodecs.BOOL.decode(buf);
             boolean sprinting = ByteBufCodecs.BOOL.decode(buf);
+            int hunters = ByteBufCodecs.VAR_INT.decode(buf);
+            int respawnSeconds = ByteBufCodecs.VAR_INT.decode(buf);
             return new ManhuntRolePayload(participant, runner, skillReady,
-                morale, moraleRewards, skillIds, skillActive, escapePhase, bountyMode, sprinting);
+                morale, moraleRewards, skillIds, skillActive, escapePhase, bountyMode, sprinting,
+                hunters, respawnSeconds);
         });
 
     @Override

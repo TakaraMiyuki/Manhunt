@@ -59,7 +59,9 @@ public final class MileageManager {
             return; // 静止或瞬移（传送/坠落）
         }
         if (!TeamUtil.isRunner(p)) {
-            dist *= GameConfig.HUNTER_MILEAGE_FACTOR; // 猎人获取效率 1/3
+            dist *= ManhuntGame.isBounty()
+                ? GameConfig.BOUNTY_HUNTER_MILEAGE_FACTOR // 赏金模式：猎人 0.7 倍
+                : GameConfig.HUNTER_MILEAGE_FACTOR;
         }
         double accum = ACCUM.merge(id, dist, Double::sum);
         long mileage = MILEAGE.getOrDefault(id, 0L);

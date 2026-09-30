@@ -1,6 +1,7 @@
 package com.example.manhunt.game;
 
 import java.util.List;
+import java.util.UUID;
 
 import com.example.manhunt.GameConfig;
 
@@ -69,6 +70,26 @@ public final class RespawnSelector {
 
         // ④ 兜底：世界出生点
         return GlobalPos.of(Level.OVERWORLD, overworld.getLevelData().getRespawnData().pos());
+    }
+
+    /** 赏金模式：猎人复活在队友附近 ≤{@code radius} 格的随机地表；无队友或选址失败则退回常规选址。 */
+    public static GlobalPos selectNearTeammate(MinecraftServer server, UUID teammateId, ServerPlayer respawning) {
+        ServerLevel overworld = server.overworld();
+        ServerPlayer teammate = server.getPlayerList().getPlayer(teammateId);
+        if (teammate != null && teammate.level().dimension() == Level.OVERWORLD) {
+            for (int attempt = 0; attempt < 24; attempt++) {
+                double angle = RNG.nextDouble() * Math.PI * 2;
+                double dist = 8 + RNG.nextDouble() * (GameConfig.BOUNTY_TEAM_RESPAWN_RADIUS - 8);
+                int x = Mth.floor(teammate.getX() + Math.cos(angle) * dist);
+                int z = Mth.floor(teammate.getZ() + Math.sin(angle) * dist);
+                int y = CheckpointManager.surfaceY(overworld, x, z);
+                if (y >= GameConfig.MIN_SURFACE_Y) {
+                    return GlobalPos.of(Level.OVERWORLD, new BlockPos(x, y, z));
+                }
+            }
+            return GlobalPos.of(Level.OVERWORLD, teammate.blockPosition());
+        }
+        return selectHunterRespawn(server, respawning);
     }
 
     /** 赏金模式：逃生者复活点——距死亡位置 300–500 格随机方向地表。 */

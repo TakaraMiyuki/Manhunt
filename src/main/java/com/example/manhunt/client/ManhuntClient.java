@@ -69,6 +69,24 @@ public final class ManhuntClient {
         event.registerAboveAll(
             Identifier.fromNamespaceAndPath(ManhuntMod.MODID, "morale_bar"),
             ManhuntClient::renderMoraleBar);
+        event.registerAboveAll(
+            Identifier.fromNamespaceAndPath(ManhuntMod.MODID, "respawn_hint"),
+            ManhuntClient::renderRespawnHint);
+    }
+
+    /** 复活倒计时小字：屏幕准星下方居中（旁观等待复活时显示剩余秒数）。 */
+    private static void renderRespawnHint(GuiGraphicsExtractor g, DeltaTracker delta) {
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.player == null || mc.level == null || mc.gui.hud.isHidden()) {
+            return;
+        }
+        int seconds = ManhuntClientState.respawnSeconds();
+        if (seconds < 0) {
+            return;
+        }
+        String text = "§e将在 " + seconds + " 秒后复活…";
+        g.text(mc.font, text, (g.guiWidth() - mc.font.width(text)) / 2,
+            g.guiHeight() / 2 + 20, 0xFFFFFFFF, true);
     }
 
     /**
@@ -89,8 +107,8 @@ public final class ManhuntClient {
         boolean bounty = ManhuntClientState.isBountyMode();
         int value = ManhuntClientState.morale();
         int rewards = ManhuntClientState.moraleRewards();
-        int next = threshold(rewards);
-        int prev = rewards == 0 ? 0 : threshold(rewards - 1);
+        int next = threshold(rewards, ManhuntClientState.hunters());
+        int prev = rewards == 0 ? 0 : threshold(rewards - 1, ManhuntClientState.hunters());
         float progress = net.minecraft.util.Mth.clamp((value - prev) / (float) Math.max(1, next - prev), 0.0F, 1.0F);
         int x = g.guiWidth() / 2 - 91;
         int y = 12; // 与原版 bossbar 同位对齐
@@ -112,12 +130,22 @@ public final class ManhuntClient {
         }
     }
 
-    /** 第 rewardsIndex 档阈值；与 MoraleManager.threshold 一致（表末后按步长外推）。 */
-    private static int threshold(int rewardsIndex) {
-        int[] t = com.example.manhunt.GameConfig.MORALE_THRESHOLDS;
+    /** 第 rewardsIndex 档阈值：经典=士气表；赏金=按猎人数三套赏金表（与 BountyManager 一致）。 */
+    private static int threshold(int rewardsIndex, int hunterCount) {
+        int[] t;
+        int step;
+        if (ManhuntClientState.isBountyMode()) {
+            t = hunterCount <= 1 ? com.example.manhunt.GameConfig.BOUNTY_TIERS_1H
+                : hunterCount == 2 ? com.example.manhunt.GameConfig.BOUNTY_TIERS_2H
+                : com.example.manhunt.GameConfig.BOUNTY_TIERS_3P;
+            step = com.example.manhunt.GameConfig.BOUNTY_TIER_STEP_AFTER;
+        } else {
+            t = com.example.manhunt.GameConfig.MORALE_THRESHOLDS;
+            step = com.example.manhunt.GameConfig.MORALE_STEP_AFTER_LAST;
+        }
         return rewardsIndex < t.length
             ? t[rewardsIndex]
-            : t[t.length - 1] + com.example.manhunt.GameConfig.MORALE_STEP_AFTER_LAST * (rewardsIndex - t.length + 1);
+            : t[t.length - 1] + step * (rewardsIndex - t.length + 1);
     }
 
     /**
@@ -308,7 +336,8 @@ public final class ManhuntClient {
             (payload, ctx) -> ManhuntClientState.update(payload.participant(), payload.runner(),
                 payload.skillReady(), payload.morale(), payload.moraleRewards(),
                 payload.skillIds(), payload.skillActive(), payload.escapePhase(),
-                payload.bountyMode(), payload.sprinting()));
+                payload.bountyMode(), payload.sprinting(),
+                payload.hunters(), payload.respawnSeconds()));
     }
 
     @SubscribeEvent

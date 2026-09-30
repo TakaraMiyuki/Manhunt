@@ -37,9 +37,17 @@ public final class BountyManager {
     /** 头号赏金发光队伍（金色描边）。 */
     private static final String BOUNTY_TEAM_NAME = "manhunt_bounty";
 
+    /** 当前生效的档位表（按赏金猎人数：1 名 / 2 名 / 3 名及以上）。 */
+    public static int[] tiers() {
+        int hunters = ManhuntGame.hunters().size();
+        return hunters <= 1 ? GameConfig.BOUNTY_TIERS_1H
+            : hunters == 2 ? GameConfig.BOUNTY_TIERS_2H
+            : GameConfig.BOUNTY_TIERS_3P;
+    }
+
     /** 第 rewardsIndex 档的阈值；表末之后按步长外推。 */
     public static int threshold(int rewardsIndex) {
-        int[] t = GameConfig.BOUNTY_TIERS;
+        int[] t = tiers();
         return rewardsIndex < t.length
             ? t[rewardsIndex]
             : t[t.length - 1] + GameConfig.BOUNTY_TIER_STEP_AFTER * (rewardsIndex - t.length + 1);

@@ -28,14 +28,27 @@ public final class TeamUtil {
         return ManhuntGame.isRunner(p.getUUID());
     }
 
-    /** 按阵营与当前档位设置最大生命值（重生/登录后属性会重置，需要重新应用）。 */
+    /** 按阵营与当前档位设置最大生命值（重生/登录后属性会重置，需要重新应用）。赏金模式走专属数值。 */
     public static void applyBaseAttributes(ServerPlayer p) {
         double target;
         if (isRunner(p)) {
-            TierSystem.RunnerStats s = TierSystem.runner();
-            target = p.level().dimension() == Level.END ? s.endMaxHealth() : s.maxHealth();
+            if (ManhuntGame.isBounty()) {
+                target = p.level().dimension() == Level.END
+                    ? GameConfig.BOUNTY_RUNNER_END_MAX_HEALTH
+                    : GameConfig.BOUNTY_RUNNER_MAX_HEALTH;
+            } else {
+                TierSystem.RunnerStats s = TierSystem.runner();
+                target = p.level().dimension() == Level.END ? s.endMaxHealth() : s.maxHealth();
+            }
         } else {
-            target = TierSystem.hunter().maxHealth();
+            if (ManhuntGame.isBounty()) {
+                boolean large = ManhuntGame.bountyHunterLarge();
+                target = p.level().dimension() == Level.END && large
+                    ? GameConfig.BOUNTY_HUNTER_END_MAX_HEALTH_LARGE
+                    : GameConfig.BOUNTY_HUNTER_MAX_HEALTH;
+            } else {
+                target = TierSystem.hunter().maxHealth();
+            }
         }
         var attr = p.getAttribute(Attributes.MAX_HEALTH);
         if (attr != null && attr.getBaseValue() != target) {
@@ -59,22 +72,46 @@ public final class TeamUtil {
             if (!ManhuntGame.isBounty()) {
                 add(p, MobEffects.GLOWING, dur, 0); // 经典模式：全员常驻发光（描边随分色队伍）
             }
-            TierSystem.RunnerStats s = TierSystem.runner();
-            if (p.level().dimension() == Level.END) {
-                add(p, MobEffects.RESISTANCE, dur, s.endResistanceLevel() - 1);
-                add(p, MobEffects.SPEED, dur, s.endSpeedLevel() - 1);
-                add(p, MobEffects.JUMP_BOOST, dur, s.endJumpLevel() - 1);
-                add(p, MobEffects.SATURATION, dur, 0);
-                add(p, MobEffects.HASTE, dur, s.hasteLevel() - 1);
+            if (ManhuntGame.isBounty()) {
+                // 赏金模式专属：急迫2（末地追加速度1/跳跃提升1/抗性1）
+                boolean end = p.level().dimension() == Level.END;
+                add(p, MobEffects.HASTE, dur, GameConfig.BOUNTY_RUNNER_HASTE - 1);
+                if (end) {
+                    add(p, MobEffects.SPEED, dur, GameConfig.BOUNTY_RUNNER_END_SPEED - 1);
+                    add(p, MobEffects.JUMP_BOOST, dur, GameConfig.BOUNTY_RUNNER_END_JUMP - 1);
+                    add(p, MobEffects.RESISTANCE, dur, GameConfig.BOUNTY_RUNNER_END_RESISTANCE - 1);
+                }
             } else {
-                add(p, MobEffects.RESISTANCE, dur, s.resistanceLevel() - 1);
-                add(p, MobEffects.HASTE, dur, s.hasteLevel() - 1);
+                TierSystem.RunnerStats s = TierSystem.runner();
+                if (p.level().dimension() == Level.END) {
+                    add(p, MobEffects.RESISTANCE, dur, s.endResistanceLevel() - 1);
+                    add(p, MobEffects.SPEED, dur, s.endSpeedLevel() - 1);
+                    add(p, MobEffects.JUMP_BOOST, dur, s.endJumpLevel() - 1);
+                    add(p, MobEffects.SATURATION, dur, 0);
+                    add(p, MobEffects.HASTE, dur, s.hasteLevel() - 1);
+                } else {
+                    add(p, MobEffects.RESISTANCE, dur, s.resistanceLevel() - 1);
+                    add(p, MobEffects.HASTE, dur, s.hasteLevel() - 1);
+                }
             }
             if (ManhuntGame.isBounty() && SprintManager.isSprinting(p.getUUID())) {
                 SprintManager.applySpeed(p); // 超级疾跑：速度 II（覆盖档位速度）
             }
         } else {
-            if (ManhuntGame.phase() == ManhuntGame.Phase.ESCAPE) {
+            if (ManhuntGame.isBounty()) {
+                // 赏金模式专属增益：抗性1/速度2/急迫2（末地追加饱和+跳跃提升1；比值≥1:4 时末地速度3）
+                boolean end = p.level().dimension() == Level.END;
+                boolean large = ManhuntGame.bountyHunterLarge();
+                add(p, MobEffects.RESISTANCE, dur, GameConfig.BOUNTY_HUNTER_RESISTANCE - 1);
+                int speed = end ? (large ? GameConfig.BOUNTY_HUNTER_END_SPEED_LARGE : GameConfig.BOUNTY_HUNTER_END_SPEED)
+                    : GameConfig.BOUNTY_HUNTER_SPEED;
+                add(p, MobEffects.SPEED, dur, speed - 1);
+                add(p, MobEffects.HASTE, dur, GameConfig.BOUNTY_HUNTER_HASTE - 1);
+                if (end) {
+                    add(p, MobEffects.SATURATION, dur, GameConfig.BOUNTY_HUNTER_END_SATURATION);
+                    add(p, MobEffects.JUMP_BOOST, dur, GameConfig.BOUNTY_HUNTER_END_JUMP - 1);
+                }
+            } else if (ManhuntGame.phase() == ManhuntGame.Phase.ESCAPE) {
                 // 逃跑时间：猎人被定身
                 add(p, MobEffects.BLINDNESS, dur, 0);
                 add(p, MobEffects.SLOWNESS, dur, 5);

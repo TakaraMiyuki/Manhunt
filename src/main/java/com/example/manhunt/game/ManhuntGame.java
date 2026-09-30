@@ -70,8 +70,8 @@ public final class ManhuntGame {
     private static ServerBossEvent countdownBar;
     private static ServerBossEvent checkpointBar;
 
-    /** 猎人重生计划：死亡 → 自动重生（10 秒旁观者）→ 传送至复活点（选址在传送时刻计算）。 */
-    private record HunterRespawn(long respawnAt, long spectateUntil) {}
+    /** 猎人重生计划：死亡 → 自动重生（旁观）→ 传送至复活点（赏金模式：主世界=队友附近 / 末地=传送门前）。 */
+    private record HunterRespawn(long respawnAt, long spectateUntil, boolean bountyEnd, UUID teammate) {}
 
     private static final Map<UUID, HunterRespawn> PENDING_HUNTER_RESPAWNS = new HashMap<>();
 
@@ -171,6 +171,12 @@ public final class ManhuntGame {
     /** 赏金模式：全体技能抽奖档位（要塞档 ÷ 6）。 */
     public static int bountySkillTier() {
         return Math.max(1, bountyStrongholdTier() / GameConfig.BOUNTY_SKILL_DIVISOR);
+    }
+
+    /** 赏金模式动态性能分档：存活逃生者数 ≥ 猎人数 × 4 → 猎人末地强化档（80 血/速度3）。 */
+    public static boolean bountyHunterLarge() {
+        int hunters = Math.max(1, HUNTERS.size());
+        return aliveRunnerCount() >= 4 * hunters;
     }
 
     public static int lives(UUID id) { return LIVES.getOrDefault(id, 0); }
@@ -375,7 +381,7 @@ public final class ManhuntGame {
             }
             // 通知客户端清除本地状态（角色/士气条/技能库）
             net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(p,
-                new com.example.manhunt.net.ManhuntRolePayload(false, false, false, 0, 0, List.of(), -1, false, false, false));
+                new com.example.manhunt.net.ManhuntRolePayload(false, false, false, 0, 0, List.of(), -1, false, false, false, 0, -1));
         }
         PENDING_HUNTER_RESPAWNS.clear();
         DeathHandler.clearAllHunterGear();
@@ -472,17 +478,25 @@ public final class ManhuntGame {
         }
 
         if (tickCounter % GameConfig.METER_SYNC_INTERVAL_TICKS == 0) {
+            long now = server.overworld().getGameTime();
             for (ServerPlayer p : server.getPlayerList().getPlayers()) {
                 boolean participant = isParticipant(p.getUUID());
                 boolean runner = TeamUtil.isRunner(p);
                 boolean skillReady = participant && runner && SkillSlotManager.hasReadyCard(p);
+                // 复活倒计时（猎人旁观等待）
+                int respawnSeconds = -1;
+                HunterRespawn hr = PENDING_HUNTER_RESPAWNS.get(p.getUUID());
+                if (hr != null && now < hr.spectateUntil()) {
+                    respawnSeconds = (int) Math.max(0, (hr.spectateUntil() - now + 19) / 20);
+                }
                 net.neoforged.neoforge.network.PacketDistributor.sendToPlayer(p,
                     new com.example.manhunt.net.ManhuntRolePayload(participant, runner, skillReady,
                         isBounty() ? BountyManager.bounty() : MoraleManager.morale(),
                         isBounty() ? BountyManager.rewards() : MoraleManager.rewards(),
                         SkillSlotManager.skillIdList(p), SkillSlotManager.activeIndex(p),
                         phase == Phase.ESCAPE,
-                        isBounty(), runner && SprintManager.isSprinting(p.getUUID())));
+                        isBounty(), runner && SprintManager.isSprinting(p.getUUID()),
+                        HUNTERS.size(), respawnSeconds));
                 if (participant) {
                     CompassManager.ensureCompasses(p);
                     MileageManager.syncMeter(p);
@@ -717,8 +731,28 @@ public final class ManhuntGame {
     /** 猎人死亡：规划自动重生（下一刻）与旁观等待时长；复活点在传送时刻选址。 */
     public static void scheduleHunterRespawn(MinecraftServer server, ServerPlayer deadHunter) {
         long now = server.overworld().getGameTime();
+        if (isBounty()) {
+            boolean diedInEnd = deadHunter.level().dimension() == Level.END;
+            int spectate = diedInEnd
+                ? GameConfig.BOUNTY_HUNTER_END_SPECTATE_TICKS   // 末地 60 秒
+                : GameConfig.BOUNTY_HUNTER_SPECTATE_TICKS;      // 主世界 30 秒
+            // 主世界复活锚点：随机选一名存活队友（其他猎人）
+            UUID teammate = null;
+            for (UUID id : HUNTERS) {
+                if (!id.equals(deadHunter.getUUID()) && server.getPlayerList().getPlayer(id) != null) {
+                    teammate = id;
+                    break;
+                }
+            }
+            PENDING_HUNTER_RESPAWNS.put(deadHunter.getUUID(),
+                new HunterRespawn(now + 2L, now + 2L + spectate, diedInEnd, teammate));
+            deadHunter.sendSystemMessage(Component.literal(
+                "§6[赏金猎人] §7将在 §f" + spectate / 20 + " §7秒后于"
+                    + (diedInEnd ? "末地传送门前" : "队友附近") + "复活。"), true);
+            return;
+        }
         PENDING_HUNTER_RESPAWNS.put(deadHunter.getUUID(),
-            new HunterRespawn(now + 2L, now + 2L + GameConfig.HUNTER_SPECTATE_TICKS));
+            new HunterRespawn(now + 2L, now + 2L + GameConfig.HUNTER_SPECTATE_TICKS, false, null));
     }
 
     public static boolean isHunterRespawnPending(UUID id) {
@@ -861,7 +895,15 @@ public final class ManhuntGame {
                 }
                 continue;
             }
-            GlobalPos pos = RespawnSelector.selectHunterRespawn(server, p);
+            GlobalPos pos;
+            if (hr.bountyEnd()) {
+                GlobalPos portal = strongholdPortalPos;
+                pos = portal != null ? portal : RespawnSelector.selectHunterRespawn(server, p);
+            } else if (hr.teammate() != null) {
+                pos = RespawnSelector.selectNearTeammate(server, hr.teammate(), p);
+            } else {
+                pos = RespawnSelector.selectHunterRespawn(server, p);
+            }
             ServerLevel level = server.getLevel(pos.dimension());
             net.minecraft.core.BlockPos bp = pos.pos();
             if (level != null) {

@@ -28,11 +28,15 @@ public final class ManhuntClientState {
     private static volatile boolean bountyMode;
     /** 超级疾跑开启中。 */
     private static volatile boolean sprinting;
+    /** 赏金猎人数（量表阈值表选择）。 */
+    private static volatile int hunters;
+    /** 复活倒计时秒数（-1 = 无）。 */
+    private static volatile int respawnSeconds = -1;
 
     public static void update(boolean isParticipant, boolean isRunner, boolean hasReadySkill,
                               int moraleValue, int moraleRewardCount,
                               List<String> skillIdList, int activeIndex, boolean escape,
-                              boolean bounty, boolean sprint) {
+                              boolean bounty, boolean sprint, int hunterCount, int respawnIn) {
         participant = isParticipant;
         runner = isRunner;
         skillReady = hasReadySkill;
@@ -43,6 +47,8 @@ public final class ManhuntClientState {
         escapePhase = escape;
         bountyMode = bounty;
         sprinting = sprint;
+        hunters = hunterCount;
+        respawnSeconds = respawnIn;
     }
 
     public static boolean isParticipant() {
@@ -109,6 +115,16 @@ public final class ManhuntClientState {
         return sprinting;
     }
 
+    /** 赏金猎人数（赏金量表阈值表）。 */
+    public static int hunters() {
+        return hunters;
+    }
+
+    /** 复活倒计时秒数（-1 = 无）。 */
+    public static int respawnSeconds() {
+        return respawnSeconds;
+    }
+
     public static void clear() {
         participant = false;
         runner = false;
@@ -120,5 +136,7 @@ public final class ManhuntClientState {
         escapePhase = false;
         bountyMode = false;
         sprinting = false;
+        hunters = 0;
+        respawnSeconds = -1;
     }
 }

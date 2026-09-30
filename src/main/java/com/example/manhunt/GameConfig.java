@@ -79,10 +79,37 @@ public final class GameConfig {
     public static final int BOUNTY_DAMAGE_FACTOR = 3;
     /** 击杀赏金 = 死者里程 ÷ 该值。 */
     public static final int BOUNTY_KILL_DIVISOR = 3;
-    /** 赏金量表档位（猎人经验条）：前期靠伤害、后期靠大额击杀，档距前紧后松。 */
-    public static final int[] BOUNTY_TIERS = {300, 800, 1600, 2800, 4400, 6500};
-    /** 末档之后每档固定增加。 */
-    public static final int BOUNTY_TIER_STEP_AFTER = 2500;
+    /** 赏金量表档位（按赏金猎人数分三套，末档后每档 +BOUNTY_TIER_STEP_AFTER）：
+     *  前期靠伤害积攒档位小、后期击杀赏金大档距放宽，猎人越多单档越大。 */
+    public static final int[] BOUNTY_TIERS_1H = {100, 200, 300, 500, 700, 1100, 1600, 2200, 2800, 3400, 4400};
+    public static final int[] BOUNTY_TIERS_2H = {150, 300, 450, 700, 1000, 1300, 1800, 2400, 3100, 3800, 4800};
+    public static final int[] BOUNTY_TIERS_3P = {200, 400, 600, 1000, 1400, 1900, 2500, 3100, 3800, 4400, 5400};
+    /** 赏金量表末档之后每档固定增加。 */
+    public static final int BOUNTY_TIER_STEP_AFTER = 1000;
+    /** 赏金模式猎人里程积攒效率（相对逃生者）。 */
+    public static final double BOUNTY_HUNTER_MILEAGE_FACTOR = 0.7;
+    /** 赏金模式猎人旁观时长：主世界被击杀 30 秒 / 末地 60 秒。 */
+    public static final int BOUNTY_HUNTER_SPECTATE_TICKS = 600;
+    public static final int BOUNTY_HUNTER_END_SPECTATE_TICKS = 1200;
+    /** 赏金模式猎人复活：任意队友附近该半径内（格）。 */
+    public static final int BOUNTY_TEAM_RESPAWN_RADIUS = 200;
+    /** 赏金模式动态性能（猎人:逃生者比值 ≤1:3 常规 / ≥1:4 猎人末地强化档）。 */
+    public static final double BOUNTY_HUNTER_MAX_HEALTH = 60.0;
+    public static final double BOUNTY_HUNTER_END_MAX_HEALTH = 60.0;
+    public static final double BOUNTY_HUNTER_END_MAX_HEALTH_LARGE = 80.0;
+    public static final int BOUNTY_HUNTER_RESISTANCE = 1;
+    public static final int BOUNTY_HUNTER_SPEED = 2;
+    public static final int BOUNTY_HUNTER_END_SPEED = 2;
+    public static final int BOUNTY_HUNTER_END_SPEED_LARGE = 3;
+    public static final int BOUNTY_HUNTER_HASTE = 2;
+    public static final int BOUNTY_HUNTER_END_SATURATION = 0;
+    public static final int BOUNTY_HUNTER_END_JUMP = 1;
+    public static final double BOUNTY_RUNNER_MAX_HEALTH = 40.0;
+    public static final double BOUNTY_RUNNER_END_MAX_HEALTH = 60.0;
+    public static final int BOUNTY_RUNNER_HASTE = 2;
+    public static final int BOUNTY_RUNNER_END_SPEED = 1;
+    public static final int BOUNTY_RUNNER_END_JUMP = 1;
+    public static final int BOUNTY_RUNNER_END_RESISTANCE = 1;
     /** 末地内击杀逃生者的回复比例（不给赏金）。 */
     public static final double BOUNTY_END_HEAL = 0.20;
     /** 头号赏金标记数量：逃生者 ≤3 / 4–7 / ≥8 → 1 / 2 / 3。 */
