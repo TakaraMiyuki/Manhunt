@@ -240,7 +240,7 @@ public final class ClientRollManager {
         Minecraft mc = Minecraft.getInstance();
         // 技能三选一（选择阶段优先）
         if (skillChoice != null && skillChoice.claimMode) {
-            if (mc.gui.screen() != null || skillChoice.items.isEmpty()) {
+            if (mc.gui.screen() != null || skillChoice.items.isEmpty() || skillChoice.detached) {
                 return false;
             }
             int dir = deltaY < 0 ? 1 : -1;
@@ -266,14 +266,31 @@ public final class ClientRollManager {
             return false;
         }
         Minecraft mc = Minecraft.getInstance();
-        // 技能三选一（选择阶段优先）：仅标记键确认领取，其余恢复正常操作
+        // 技能三选一（选择阶段优先）：中键确认领取；左键暂时脱离（资源抽奖一并脱离）；
+        // 脱离状态下中键返回
         if (skillChoice != null && skillChoice.claimMode) {
             if (mc.gui.screen() != null) {
                 return false;
             }
             if (matchesMouse(ManhuntClient.LOOT_MARK, button)) {
-                confirmSkillChoice();
+                if (skillChoice.detached || (current != null && current.detached)) {
+                    skillChoice.detached = false;
+                    if (current != null) {
+                        current.detached = false;
+                    }
+                    uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 1.2F, 0.3F);
+                } else {
+                    confirmSkillChoice();
+                }
                 return true;
+            }
+            if (button == GLFW.GLFW_MOUSE_BUTTON_LEFT && !skillChoice.detached) {
+                skillChoice.detached = true; // 左键：同时脱离技能抽奖与资源抽奖
+                if (current != null && hasClaimSession()) {
+                    current.detached = true;
+                }
+                uiSound(SoundEvents.UI_BUTTON_CLICK.value(), 0.7F, 0.3F);
+                return false; // 不拦截原版左键操作
             }
             return false;
         }
@@ -327,8 +344,9 @@ public final class ClientRollManager {
 
     /** 键盘按键（在原版处理后调用）。返回 true 表示已消费。标记/领取的键位可在设置中修改。脱离状态下不拦截。 */
     public static boolean onKey(int key, int action) {
-        // 技能三选一（选择阶段优先）
-        if (skillChoice != null && skillChoice.claimMode && action == GLFW.GLFW_PRESS) {
+        // 技能三选一（选择阶段优先；脱离状态不拦截键盘）
+        if (skillChoice != null && skillChoice.claimMode && !skillChoice.detached
+                && action == GLFW.GLFW_PRESS) {
             if (matchesKey(ManhuntClient.LOOT_MARK, key) || key == GLFW.GLFW_KEY_UP) {
                 confirmSkillChoice();
                 return true;
@@ -446,8 +464,9 @@ public final class ClientRollManager {
         String title = roll.title != null ? roll.title : "§d技能抽奖";
         g.text(mc.font, title, (g.guiWidth() - mc.font.width(title)) / 2, rowY - 12, 0xFFFFFFFF, true);
 
-        // 紫色流光底板
-        float shimmer = 0.10F + 0.06F * (float) Math.sin(t * 0.15);
+        // 紫色流光底板（脱离时置灰）
+        float dim = roll.detached ? 0.35F : 1.0F;
+        float shimmer = (0.10F + 0.06F * (float) Math.sin(t * 0.15)) * dim;
         int glow = withAlpha(mixAlpha(roll.accentColor != 0 ? roll.accentColor : 0xFFB266FF, shimmer), 1.0F);
         g.fillGradient(x0 - 12, rowY - 8, x0 + width + 12, rowY + icon + 8,
             glow, withAlpha(0x00000000, 1.0F));

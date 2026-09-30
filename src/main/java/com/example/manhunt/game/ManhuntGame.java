@@ -271,7 +271,8 @@ public final class ManhuntGame {
             BossEvent.BossBarColor.GREEN, BossEvent.BossBarOverlay.PROGRESS);
         countdownBar.setProgress(1.0F);
         for (ServerPlayer p : onlineParticipants(server)) {
-            // 重置技能卡永久加成（赤鳞跃动等），避免跨局残留
+            // 清空被动卡饰品槽（防跨局残留）+ 重置技能卡永久加成（赤鳞跃动等）
+            com.example.manhunt.compat.SkillPassiveBridge.clearPassives(p);
             SkillCardsBridge.resetPersistentBonuses(p);
             com.example.manhunt.compat.CraftingOnAStickBridge.giveStick(p);
             TeamUtil.applyBaseAttributes(p);
@@ -380,6 +381,7 @@ public final class ManhuntGame {
         }
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
             if (isParticipant(p.getUUID())) {
+                com.example.manhunt.compat.SkillPassiveBridge.clearPassives(p);
                 SkillCardsBridge.resetPersistentBonuses(p);
                 if (!p.isDeadOrDying()) {
                     p.getInventory().clearContent(); // 对局重置清空背包

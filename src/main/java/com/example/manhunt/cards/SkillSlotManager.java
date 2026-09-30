@@ -36,9 +36,21 @@ public final class SkillSlotManager {
 
     // ==================== 抽卡入库 ====================
 
-    /** 发放抽到的技能卡：加入技能库（上限 {@code SKILL_MAX_CARDS}，单人调试不限），超出直接丢弃。 */
+    /** 发放抽到的技能卡：被动卡自动装备进饰品栏（6 格，满则丢弃）；主动卡加入技能库（上限 8）。 */
     public static void giveDrawnCard(ServerPlayer runner, SkillCardsBridge.CardDraw draw) {
         if (!SkillCardsBridge.available()) {
+            return;
+        }
+        if (SkillCardsBridge.isPassiveCard(draw.stack())) {
+            if (com.example.manhunt.compat.SkillPassiveBridge.equipPassive(runner, draw.stack())) {
+                runner.sendSystemMessage(Component.literal(
+                    "§6[技能库] §f" + draw.stack().getHoverName().getString()
+                        + " §7（被动）已放入饰品栏并开始生效。"));
+            } else {
+                runner.sendSystemMessage(Component.literal(
+                    "§6[技能库] §f" + draw.stack().getHoverName().getString()
+                        + " §7（被动）已丢弃——被动饰品栏已满（6 张）。"));
+            }
             return;
         }
         UUID id = runner.getUUID();
@@ -199,8 +211,9 @@ public final class SkillSlotManager {
         for (ServerPlayer p : ManhuntGame.onlineAliveRunners(server)) {
             NonNullList<ItemStack> items = p.getInventory().getNonEquipmentItems();
             for (int i = 0; i < items.size(); i++) {
-                if (i != GameConfig.CARD_SLOT && SkillCardsBridge.isSkillCard(items.get(i))) {
-                    items.set(i, ItemStack.EMPTY); // 镜像副本，清除防复制
+                if (i != GameConfig.CARD_SLOT && SkillCardsBridge.isSkillCard(items.get(i))
+                        && !SkillCardsBridge.isPassiveCard(items.get(i))) {
+                    items.set(i, ItemStack.EMPTY); // 镜像副本，清除防复制（被动卡放行：背包中同样生效）
                 }
             }
             // 技能槽被放入其他物品：经安全入包退回（跳过技能槽，防止再落回原位）
@@ -235,12 +248,19 @@ public final class SkillSlotManager {
         return false;
     }
 
-    /** 技能库已拥有的卡牌物品 id 集合（用于不可重复抽取）。 */
+    /** 已拥有的卡牌物品 id 集合（技能库 + 被动饰品栏 + 背包中的被动卡；用于不可重复抽取）。 */
     public static java.util.Set<String> ownedIds(ServerPlayer player) {
         java.util.Set<String> ids = new java.util.HashSet<>();
         List<ItemStack> cards = COLLECTION.get(player.getUUID());
         if (cards != null) {
             for (ItemStack stack : cards) {
+                ids.add(net.minecraft.core.registries.BuiltInRegistries.ITEM
+                    .getKey(stack.getItem()).toString());
+            }
+        }
+        ids.addAll(com.example.manhunt.compat.SkillPassiveBridge.equippedIds(player));
+        for (ItemStack stack : player.getInventory().getNonEquipmentItems()) {
+            if (SkillCardsBridge.isPassiveCard(stack)) {
                 ids.add(net.minecraft.core.registries.BuiltInRegistries.ITEM
                     .getKey(stack.getItem()).toString());
             }

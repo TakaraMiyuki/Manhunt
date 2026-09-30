@@ -147,6 +147,12 @@ public final class SkillCardsBridge {
         return stack.getItem() instanceof com.example.skillcards.item.SkillCardItem;
     }
 
+    /** 物品是否为被动卡（无主动使用、放入饰品栏常驻生效）。 */
+    public static boolean isPassiveCard(ItemStack stack) {
+        return stack.getItem() instanceof com.example.skillcards.item.SkillCardItem cardItem
+            && cardItem.card().isPassive();
+    }
+
     /** 物品的卡牌品级；非技能卡返回 null。 */
     public static com.example.skillcards.registry.Card.Grade gradeOf(ItemStack stack) {
         if (stack.getItem() instanceof com.example.skillcards.item.SkillCardItem cardItem) {

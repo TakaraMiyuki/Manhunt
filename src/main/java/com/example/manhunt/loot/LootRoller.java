@@ -22,7 +22,7 @@ public final class LootRoller {
     public static void resourceRoll(ServerPlayer player, long mileage) {
         List<RewardPools.Entry> pool = RewardPools.pool(RewardPools.tierOf(mileage));
         List<ItemStack> items = doRoll(pool, GameConfig.ROLL_ITEMS, player.registryAccess());
-        PendingRewardManager.start(player, LootRollPayload.TYPE_RESOURCE, items);
+        PendingRewardManager.startMileageRoll(player, LootRollPayload.TYPE_RESOURCE, items);
     }
 
     /** 超级抽奖：从当前里程档及以上的池抽 {@code GameConfig.SUPER_ROLL_ITEMS} 种（不出现更差的物资）。 */
