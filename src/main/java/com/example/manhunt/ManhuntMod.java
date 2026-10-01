@@ -63,10 +63,7 @@ public final class ManhuntMod {
         NeoForge.EVENT_BUS.addListener(DeathHandler::onUseItemStart);
         // 经验球不再跟随参与者（配合 PickupXp 取消，防止经验球环绕无法吸收）
         NeoForge.EVENT_BUS.addListener(ManhuntMod::onXpOrbTargeting);
-        // 技能栏：左键切换（打方块/打实体双侧取消并切换，挥空由客户端发包）
-        NeoForge.EVENT_BUS.addListener(com.example.manhunt.cards.SkillSlotManager::onLeftClickBlock);
-        NeoForge.EVENT_BUS.addListener(com.example.manhunt.cards.SkillSlotManager::onAttackEntity);
-        NeoForge.EVENT_BUS.addListener(com.example.manhunt.cards.SkillSlotManager::onLeftClickEmpty);
+        // 技能卡不可丢弃（技能栏化后卡牌不进背包，仅保留丢弃拦截）
         NeoForge.EVENT_BUS.addListener(com.example.manhunt.cards.SkillSlotManager::onItemToss);
     }
 

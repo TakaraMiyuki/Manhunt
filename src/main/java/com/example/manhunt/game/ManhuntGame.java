@@ -507,7 +507,7 @@ public final class ManhuntGame {
                     new com.example.manhunt.net.ManhuntRolePayload(participant, runner, skillReady,
                         isBounty() ? BountyManager.bounty() : MoraleManager.morale(),
                         isBounty() ? BountyManager.rewards() : MoraleManager.rewards(),
-                        SkillSlotManager.skillIdList(p), SkillSlotManager.activeIndex(p),
+                        SkillSlotManager.skillIdList(p), SkillSlotManager.selectedIndex(p.getUUID()),
                         phase == Phase.ESCAPE,
                         isBounty(), runner && SprintManager.isSprinting(p.getUUID()),
                         HUNTERS.size(), respawnSeconds));
@@ -530,9 +530,6 @@ public final class ManhuntGame {
         }
         if (tickCounter % GameConfig.COMPASS_UPDATE_INTERVAL_TICKS == 0) {
             CompassManager.updateAll(server);
-        }
-        if (tickCounter % GameConfig.CARD_SLOT_GUARD_INTERVAL_TICKS == 0) {
-            SkillSlotManager.tickGuard(server);
         }
         if (tickCounter % GameConfig.BOSSBAR_UPDATE_INTERVAL_TICKS == 0 && checkpointBar != null) {
             updateCheckpointBossbar(server);

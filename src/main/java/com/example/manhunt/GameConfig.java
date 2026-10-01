@@ -47,9 +47,9 @@ public final class GameConfig {
     /** 玩家进食加速倍率（相对原版）。 */
     public static final double EAT_SPEED_FACTOR = 1.5;
     /** 技能库持有上限（张，单人调试模式不限）。 */
-    public static final int SKILL_MAX_CARDS = 8;
-    /** 长按左键呼出技能轮盘的按住时长（刻）。 */
-    public static final int SKILL_WHEEL_HOLD_TICKS = 6;
+    public static final int SKILL_MAX_CARDS = 9;
+    /** 技能栏容量（隐藏快捷栏格数，与快捷栏一致）。 */
+    public static final int SKILL_BAR_SLOTS = 9;
     /** 同阵营伤害上限（点）。 */
     public static final float FRIENDLY_FIRE_CAP = 2.0F;
     /** 昼夜比（日:夜 = 7:3）：夜间时钟速率 = 7/3。 */
@@ -131,8 +131,6 @@ public final class GameConfig {
     public static final int CARD_WEIGHT_RARE = 30;
     public static final int CARD_WEIGHT_BLACK = 30;
     public static final int CARD_WEIGHT_RAINBOW = 4;
-    /** 技能栏固定于快捷栏最右一格（0-based）。 */
-    public static final int CARD_SLOT = 8;
     /** 技能切换最短间隔（刻）：仅防同一点击重复计数，不影响连点手感。 */
     public static final int SKILL_SWITCH_COOLDOWN_TICKS = 3;
 
@@ -173,8 +171,6 @@ public final class GameConfig {
     public static final int METER_SYNC_INTERVAL_TICKS = 20;
     /** 人数档位重算间隔。 */
     public static final int TIER_RECALC_INTERVAL_TICKS = 40;
-    /** 技能栏守护间隔（经验条/技能槽镜像）。 */
-    public static final int CARD_SLOT_GUARD_INTERVAL_TICKS = 10;
     /** 抽奖 UI 距屏幕顶部偏移（避让 bossbar/检查点距离显示）。 */
     public static final int ROLL_UI_TOP_OFFSET = 40;
 }

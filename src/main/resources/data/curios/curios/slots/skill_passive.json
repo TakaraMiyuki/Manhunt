@@ -1,6 +1,8 @@
 {
+  "replace": false,
   "size": 6,
   "order": 500,
   "icon": "curios:slot/empty_curio_slot",
-  "validators": ["curios:tag"]
+  "validators": ["curios:tag"],
+  "entities": ["player"]
 }

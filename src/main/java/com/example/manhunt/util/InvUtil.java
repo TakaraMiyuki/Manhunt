@@ -22,9 +22,6 @@ public final class InvUtil {
         // 1) 与已有可堆叠物品合并（跳过技能槽）
         ItemStack remaining = stack;
         for (int i = 0; i < slotCount && !remaining.isEmpty(); i++) {
-            if (i == skillSlot()) {
-                continue;
-            }
             ItemStack inSlot = items.get(i);
             if (!inSlot.isEmpty() && ItemStack.isSameItemSameComponents(inSlot, remaining)) {
                 int max = Math.min(inSlot.getMaxStackSize(), remaining.getMaxStackSize());
@@ -42,9 +39,6 @@ public final class InvUtil {
 
         // 2) 放入空位（跳过技能槽）
         for (int i = 0; i < slotCount; i++) {
-            if (i == skillSlot()) {
-                continue;
-            }
             if (items.get(i).isEmpty()) {
                 items.set(i, remaining.split(remaining.getCount()));
                 return true;
@@ -53,7 +47,4 @@ public final class InvUtil {
         return false;
     }
 
-    private static int skillSlot() {
-        return com.example.manhunt.GameConfig.CARD_SLOT;
-    }
 }

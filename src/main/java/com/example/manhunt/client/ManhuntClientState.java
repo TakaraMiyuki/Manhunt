@@ -84,17 +84,29 @@ public final class ManhuntClientState {
         return skillActive;
     }
 
-    /** 技能库卡牌堆（按同步 id 本地构建，用于轮盘渲染）。 */
+    /** 本地乐观选中（客户端立即反馈，服务器每秒兜底同步）。 */
+    public static void selectLocal(int index) {
+        skillActive = index;
+    }
+
+    /** 技能栏卡牌堆（按同步 id 本地构建，空格为 EMPTY，保持槽位对齐）。 */
     public static List<ItemStack> skillStacks() {
         List<ItemStack> out = new ArrayList<>();
         for (String id : skillIds) {
+            if (id == null || id.isEmpty()) {
+                out.add(ItemStack.EMPTY);
+                continue;
+            }
             try {
                 var holder = net.minecraft.core.registries.BuiltInRegistries.ITEM
                     .get(Identifier.parse(id));
                 if (holder.isPresent()) {
                     out.add(new ItemStack(holder.get().value()));
+                } else {
+                    out.add(ItemStack.EMPTY);
                 }
-            } catch (Exception ignored) {
+            } catch (Exception e) {
+                out.add(ItemStack.EMPTY);
             }
         }
         return out;

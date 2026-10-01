@@ -156,7 +156,6 @@ public final class ClientRollManager {
             current = null;
             skillChoice = null;
             cardQueue.clear();
-            ClientSkillWheel.clear();
             return;
         }
         long now = mc.level.getGameTime();
@@ -727,6 +726,5 @@ public final class ClientRollManager {
         current = null;
         skillChoice = null;
         cardQueue.clear();
-        ClientSkillWheel.clear();
     }
 }

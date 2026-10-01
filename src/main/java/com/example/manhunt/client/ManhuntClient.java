@@ -19,6 +19,8 @@ import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.InputEvent;
 import net.neoforged.neoforge.client.event.RegisterGuiLayersEvent;
 import net.neoforged.neoforge.client.event.RegisterKeyMappingsEvent;
+import net.neoforged.neoforge.client.event.RenderGuiLayerEvent;
+import net.neoforged.neoforge.client.event.ScreenEvent;
 import net.neoforged.neoforge.client.network.event.RegisterClientPayloadHandlersEvent;
 import net.neoforged.neoforge.client.settings.KeyConflictContext;
 
@@ -44,9 +46,13 @@ public final class ManhuntClient {
     public static final KeyMapping LOOT_CLAIM = new KeyMapping(
         "key.manhunt.loot_claim", KeyConflictContext.IN_GAME,
         InputConstants.Type.MOUSE, GLFW.GLFW_MOUSE_BUTTON_RIGHT, LOOT_CATEGORY);
-    /** 超级疾跑开关（赏金模式，默认左 Alt，可改键）。 */
+    /** 超级疾跑开关（赏金模式，默认 C，可改键）。 */
     public static final KeyMapping SPRINT_KEY = new KeyMapping(
         "key.manhunt.super_sprint", KeyConflictContext.IN_GAME,
+        InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_C, LOOT_CATEGORY);
+    /** 技能栏呼出（按住，默认左 Alt，可改键）。 */
+    public static final KeyMapping SKILL_BAR_KEY = new KeyMapping(
+        "key.manhunt.skill_bar", KeyConflictContext.IN_GAME,
         InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_LEFT_ALT, LOOT_CATEGORY);
 
 
@@ -56,6 +62,7 @@ public final class ManhuntClient {
         event.register(LOOT_MARK);
         event.register(LOOT_CLAIM);
         event.register(SPRINT_KEY);
+        event.register(SKILL_BAR_KEY);
     }
 
     @SubscribeEvent
@@ -72,6 +79,29 @@ public final class ManhuntClient {
         event.registerAboveAll(
             Identifier.fromNamespaceAndPath(ManhuntMod.MODID, "respawn_hint"),
             ManhuntClient::renderRespawnHint);
+        event.registerAboveAll(
+            Identifier.fromNamespaceAndPath(ManhuntMod.MODID, "skill_hotbar"),
+            ClientSkillBar::renderHotbar);
+    }
+
+    /** Alt 技能栏激活时取消原版热栏渲染（由技能热栏层替换）。 */
+    @SubscribeEvent
+    public static void onRenderGuiLayerPre(RenderGuiLayerEvent.Pre event) {
+        ClientSkillBar.onRenderGuiLayerPre(event);
+    }
+
+    /** 背包界面：技能栏覆盖层渲染。 */
+    @SubscribeEvent
+    public static void onScreenRender(ScreenEvent.Render.Post event) {
+        ClientSkillBar.onScreenRender(event);
+    }
+
+    /** 背包界面：技能栏点击（调整顺序/调试放入取出）。 */
+    @SubscribeEvent
+    public static void onScreenMouseButtonPressed(ScreenEvent.MouseButtonPressed.Pre event) {
+        if (ClientSkillBar.onScreenClick(event)) {
+            event.setCanceled(true);
+        }
     }
 
     /** 复活倒计时小字：屏幕准星下方居中（旁观等待复活时显示剩余秒数）。 */
@@ -150,40 +180,19 @@ public final class ManhuntClient {
     }
 
     /**
-     * 技能槽特殊边框：快捷栏最右一格为固定技能槽，显示金色脉冲边框。
-     * 依据槽内是否为技能卡自我判定（技能卡只出现在游戏内的逃生者身上）。
+     * 罗盘边框层：逃生者=检查点罗盘（近距金脉冲），猎人=追踪罗盘（偏航红脉冲/近距金脉冲）。
+     * （旧"技能槽边框"随技能栏改版移除——技能栏由 Alt 热栏替换层与背包覆盖层呈现。）
      */
     private static void renderSkillSlotBorder(GuiGraphicsExtractor g, DeltaTracker delta) {
         Minecraft mc = Minecraft.getInstance();
         if (mc.player == null || mc.level == null || mc.gui.hud.isHidden()) {
             return;
         }
-        if (!ManhuntClientState.isRunner()) {
-            // 猎人：追踪罗盘边框（贴近锁定目标时红色脉冲）
-            renderCompassBorder(g, mc, delta, com.example.manhunt.item.ManhuntItems.TRACKING_COMPASS.get());
-            return;
-        }
-        ItemStack slot = mc.player.getInventory().getItem(8);
-        boolean hasCard = com.example.manhunt.cards.SkillCardsBridge.available()
-            && com.example.manhunt.cards.SkillCardsBridge.isSkillCard(slot);
-        // 原版槽位物品坐标：x = guiWidth/2 - 90 + i*20 + 2，y = guiHeight - 19
-        int x = g.guiWidth() / 2 - 90 + 8 * 20 + 2;
-        int y = g.guiHeight() - 19;
-        long now = mc.level.getGameTime();
-        // 技能库任一卡可用：金色脉冲；全部冷却中或技能库为空：静态金框
-        float alpha;
-        if (hasCard && ManhuntClientState.isSkillReady()) {
-            alpha = 0.55F + 0.45F * (float) Math.abs(Math.sin((now + delta.getGameTimeDeltaPartialTick(false)) * 0.25));
+        if (ManhuntClientState.isRunner()) {
+            renderCompassBorder(g, mc, delta, com.example.manhunt.item.ManhuntItems.CHECKPOINT_COMPASS.get());
         } else {
-            alpha = hasCard ? 0.85F : 0.55F;
+            renderCompassBorder(g, mc, delta, com.example.manhunt.item.ManhuntItems.TRACKING_COMPASS.get());
         }
-        int col = withAlpha(ClientRollManager.accentGold(), alpha);
-        g.fill(x - 3, y - 3, x + 19, y - 1, col);
-        g.fill(x - 3, y + 17, x + 19, y + 19, col);
-        g.fill(x - 3, y - 1, x - 1, y + 17, col);
-        g.fill(x + 17, y - 1, x + 19, y + 17, col);
-        // 逃生者：检查点罗盘 <50 格红脉冲
-        renderCompassBorder(g, mc, delta, com.example.manhunt.item.ManhuntItems.CHECKPOINT_COMPASS.get());
     }
 
     /** 罗盘偏航计时：方向持续偏离罗盘指向的起点（-1 = 未偏离）。 */
@@ -344,7 +353,7 @@ public final class ManhuntClient {
     @SubscribeEvent
     public static void onClientTick(ClientTickEvent.Post event) {
         ClientRollManager.tick();
-        ClientSkillWheel.tick();
+        ClientSkillBar.tick();
         // 超级疾跑开关（按一下切换）
         Minecraft mc = Minecraft.getInstance();
         while (SPRINT_KEY.consumeClick()) {
@@ -370,14 +379,15 @@ public final class ManhuntClient {
             event.setCanceled(true);
             return;
         }
-        // 技能轮盘：手持技能卡长按左键呼出（短按循环切换）
-        if (ClientSkillWheel.onMouseButton(event.getButton(), event.getAction())) {
+        // Alt 技能栏：右键释放/左键查看详情/脱离等（激活时接管鼠标）
+        if (ClientSkillBar.onMouseButton(event.getButton(), event.getAction())) {
             event.setCanceled(true);
         }
     }
 
     @SubscribeEvent
     public static void onKey(InputEvent.Key event) {
+        ClientSkillBar.onKey(event.getKey(), event.getAction());
         int key = event.getKey();
         if (key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER
                 || key == GLFW.GLFW_KEY_LEFT || key == GLFW.GLFW_KEY_RIGHT

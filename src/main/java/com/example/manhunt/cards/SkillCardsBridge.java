@@ -147,6 +147,26 @@ public final class SkillCardsBridge {
         return stack.getItem() instanceof com.example.skillcards.item.SkillCardItem;
     }
 
+    /**
+     * 激活一张技能卡（技能栏右键释放路径）：被动卡直接失败；
+     * 成功与否由卡牌 action 决定（调用方负责写入原版冷却）。
+     */
+    public static boolean activate(net.minecraft.server.level.ServerPlayer player, ItemStack stack) {
+        if (stack.getItem() instanceof com.example.skillcards.item.SkillCardItem cardItem
+                && !cardItem.card().isPassive()) {
+            return cardItem.card().activate(player);
+        }
+        return false;
+    }
+
+    /** 卡牌冷却时长（刻）。 */
+    public static int cooldownTicks(ItemStack stack) {
+        if (stack.getItem() instanceof com.example.skillcards.item.SkillCardItem cardItem) {
+            return cardItem.card().cooldownTicks();
+        }
+        return 0;
+    }
+
     /** 物品是否为被动卡（无主动使用、放入饰品栏常驻生效）。 */
     public static boolean isPassiveCard(ItemStack stack) {
         return stack.getItem() instanceof com.example.skillcards.item.SkillCardItem cardItem
