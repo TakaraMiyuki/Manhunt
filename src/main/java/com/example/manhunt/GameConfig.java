@@ -120,8 +120,8 @@ public final class GameConfig {
     public static final double BOUNTY_MULT_RANK1_LARGE = 2.0; // 逃生者 ≥8
     public static final double BOUNTY_MULT_RANK3_SMALL = 1.8; // 逃生者 6–7
     public static final double BOUNTY_MULT_RANK3_LARGE = 2.0; // 逃生者 ≥8
-    /** 超级疾跑：饥饿消耗间隔（刻，0.5 秒 1 点）。 */
-    public static final int SPRINT_HUNGER_INTERVAL_TICKS = 10;
+    /** 超级疾跑：饥饿消耗间隔（刻，每秒 1 点）。 */
+    public static final int SPRINT_HUNGER_INTERVAL_TICKS = 20;
     /** 技能三选一的 UI accent（紫色）。 */
     public static final int SKILL_CHOICE_ACCENT = 0xFFB266FF;
 

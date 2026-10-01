@@ -48,7 +48,7 @@ public final class ManhuntClient {
         InputConstants.Type.MOUSE, GLFW.GLFW_MOUSE_BUTTON_RIGHT, LOOT_CATEGORY);
     /** 超级疾跑开关（赏金模式，默认 C，可改键）。 */
     public static final KeyMapping SPRINT_KEY = new KeyMapping(
-        "key.manhunt.super_sprint", KeyConflictContext.IN_GAME,
+        "key.manhunt.super_sprint_toggle", KeyConflictContext.IN_GAME,
         InputConstants.Type.KEYSYM, GLFW.GLFW_KEY_C, LOOT_CATEGORY);
     /** 技能栏呼出（按住，默认左 Alt，可改键）。 */
     public static final KeyMapping SKILL_BAR_KEY = new KeyMapping(
@@ -368,6 +368,11 @@ public final class ManhuntClient {
 
     @SubscribeEvent
     public static void onMouseScrolling(InputEvent.MouseScrollingEvent event) {
+        // Alt 技能栏激活时滚轮切换技能（优先于资源抽奖）
+        if (ClientSkillBar.onMouseScroll(event.getScrollDeltaY())) {
+            event.setCanceled(true);
+            return;
+        }
         if (ClientRollManager.onMouseScroll(event.getScrollDeltaY())) {
             event.setCanceled(true);
         }

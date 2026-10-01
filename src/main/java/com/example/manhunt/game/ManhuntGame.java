@@ -297,7 +297,7 @@ public final class ManhuntGame {
                             + "地图上有 " + BOUNTY_CHECKPOINTS.size() + " 个检查点（金色粒子圈）可自由选择前往。"));
                     p.sendSystemMessage(Component.literal(
                         "§e[赏金猎人] 你的里程将计入全队总里程池（当前档位 §f" + bountyStrongholdTier() + "§e）。"
-                            + "每移动 " + GameConfig.MILEAGE_PER_ROLL + " 格触发一次资源抽奖；按 §f左Alt§e 开启超级疾跑。"));
+                            + "每移动 " + GameConfig.MILEAGE_PER_ROLL + " 格触发一次资源抽奖；按 §fC§e 开启超级疾跑。"));
                 } else {
                     p.sendSystemMessage(Component.literal(
                         "§e[猎人游戏] 你是 §a逃生者§e！60 秒后猎人开始追杀。沿检查点链前进，里程达标后前往末地击杀末影龙！"));

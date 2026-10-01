@@ -315,17 +315,25 @@ public final class ClientSkillBar {
             event.getGuiGraphics().outline(px - 1, y - 1, 18, 18, 0xFFFFFFFF);
         }
 
-        // 标签 + 悬停卡名
-        String label = "§6技能栏";
-        event.getGuiGraphics().text(mc().font, label, x0, y - 11, 0xFFFFFFFF);
+        // 悬停高亮 + 卡名
         int mouseX = event.getMouseX();
         int mouseY = event.getMouseY();
+        int hovered = -1;
         if (inInvRow(mouseX, mouseY, geo)) {
-            int slot = invSlotAt(mouseX, mouseY, geo);
-            ItemStack stack = slot < stacks.size() ? stacks.get(slot) : ItemStack.EMPTY;
+            hovered = invSlotAt(mouseX, mouseY, geo);
+            event.getGuiGraphics().outline(x0 + 1 + hovered * 18, y, 17, 17, 0xFFFFD700);
+            ItemStack stack = hovered < stacks.size() ? stacks.get(hovered) : ItemStack.EMPTY;
             if (!stack.isEmpty()) {
                 String hover = "§f" + stack.getHoverName().getString();
                 event.getGuiGraphics().text(mc().font, hover, mouseX + 8, mouseY - 8, 0xFFFFFFFF);
+            }
+        }
+        // 已点选源格：白色常亮框 + 卡牌跟随鼠标（拖动观感）
+        if (editPick >= 0) {
+            event.getGuiGraphics().outline(x0 + 1 + editPick * 18, y, 17, 17, 0xFFFFFFFF);
+            ItemStack picked = editPick < stacks.size() ? stacks.get(editPick) : ItemStack.EMPTY;
+            if (!picked.isEmpty()) {
+                event.getGuiGraphics().item(picked, mouseX - 8, mouseY - 8);
             }
         }
     }
