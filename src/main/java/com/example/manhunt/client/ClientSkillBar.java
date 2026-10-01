@@ -153,9 +153,19 @@ public final class ClientSkillBar {
         g.fill(x0 - 1, y, x0, y + 22, frame);
         g.fill(x0 + 183, y, x0 + 184, y + 22, frame);
 
-        // 标题提示
+        // 标题 + 选中技能名/概述（滚轮游标停留处）
         String title = "§6技能栏 §7(右键释放选中技能)";
-        g.text(mc.font, title, (w - mc.font.width(title)) / 2, y - 26, 0xFFFFFFFF, true);
+        g.text(mc.font, title, (w - mc.font.width(title)) / 2, y - 46, 0xFFFFFFFF, true);
+        if (selected < stacks.size()) {
+            ItemStack sel = stacks.get(selected);
+            if (!sel.isEmpty()) {
+                String name = sel.getHoverName().getString();
+                g.text(mc.font, "§f" + name, (w - mc.font.width("§f" + name)) / 2, y - 34, 0xFFFFFFFF, true);
+                String brief = "§b" + net.minecraft.network.chat.Component.translatable(
+                    sel.getItem().getDescriptionId() + ".brief").getString();
+                g.text(mc.font, brief, (w - mc.font.width(brief)) / 2, y - 25, 0xFFFFFFFF, true);
+            }
+        }
 
         // 按住左键：详情面板
         if (viewingDetails && !stacks.isEmpty() && selected < stacks.size()) {

@@ -1,6 +1,8 @@
 package com.example.manhunt.game;
 
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -20,6 +22,8 @@ public final class SprintManager {
     private SprintManager() {}
 
     private static final Set<UUID> SPRINTING = new HashSet<>();
+    /** 上一采样点（x/y/z），用于判定玩家是否处于移动状态。 */
+    private static final Map<UUID, double[]> LAST_POS = new HashMap<>();
 
     public static boolean isSprinting(UUID id) {
         return SPRINTING.contains(id);
@@ -58,11 +62,22 @@ public final class SprintManager {
                 p.sendSystemMessage(Component.literal("§6[赏金猎人] §c饥饿不足，超级疾跑已关闭。"), true);
                 continue;
             }
+            // 仅移动状态扣饥饿：每个消耗间隔对比一次位置（静止不动不消耗）
             if (p.tickCount % GameConfig.SPRINT_HUNGER_INTERVAL_TICKS == 0) {
-                var food = p.getFoodData();
-                food.setFoodLevel(Math.max(0, food.getFoodLevel() - 1));
+                double[] last = LAST_POS.get(id);
+                if (last != null) {
+                    double dx = p.getX() - last[0];
+                    double dy = p.getY() - last[1];
+                    double dz = p.getZ() - last[2];
+                    if (dx * dx + dy * dy + dz * dz > 0.0025) { // 移动超过 5cm
+                        var food = p.getFoodData();
+                        food.setFoodLevel(Math.max(0, food.getFoodLevel() - 1));
+                    }
+                }
+                LAST_POS.put(id, new double[]{p.getX(), p.getY(), p.getZ()});
             }
         }
+        LAST_POS.keySet().removeIf(id -> !SPRINTING.contains(id));
     }
 
     /** 速度 II 维持（由 TeamUtil.refreshBuffs 在赏金疾跑分支调用）。 */
@@ -73,5 +88,6 @@ public final class SprintManager {
 
     public static void reset() {
         SPRINTING.clear();
+        LAST_POS.clear();
     }
 }
