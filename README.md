@@ -70,6 +70,10 @@ Minecraft Java **26.2** / NeoForge **26.2** 猎人追杀玩法模组（**0.3.6-b
 - 构建插件 ModDevGradle 2.0.146 / Gradle 9.2.1 / JDK 25；编译期 NeoForge **26.2.0.82**（0.88 会触发 NFRT 重编译失败，运行依赖为宽区间不受影响）
 - 编译期引用 `../SkillCards/build/libs/skillcards-0.2.0-beta.jar` 与 `libs/curios-neoforge-16.0.0+26.2.jar`（联动引用收敛在 `cards/SkillCardsBridge` 与 `compat/` 桥接类）
 
+## 许可
+
+**All Rights Reserved © 2026 TakaraMiyuki** —— 保留所有权利：未经作者书面许可，不得复制/分发/修改/衍生或商用；在 Minecraft 客户端/服务端中正常加载运行不受限制。详见 [LICENSE](LICENSE)。
+
 ## 已知限制（测试版）
 
 - 检查点标记为原版方块组合，未做防破坏保护
