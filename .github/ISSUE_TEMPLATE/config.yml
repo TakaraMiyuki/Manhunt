@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 数值与机制文档
+    url: https://github.com/TakaraMiyuki/Manhunt/blob/main/docs/%E7%8E%A9%E6%B3%95%E4%B8%8E%E6%9C%BA%E5%88%B6%E4%BB%8B%E7%BB%8D.md
+    about: 提建议前先核对当前数值与机制设定
